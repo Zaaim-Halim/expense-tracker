@@ -3,8 +3,6 @@ package com.example.expensetracker.controller;
 import com.example.expensetracker.ExpenseTrackerApp;
 import com.example.expensetracker.model.Category;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.FormatStyle;
 import java.util.Optional;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
@@ -20,13 +18,15 @@ import javafx.stage.Window;
 /** Small pieces every page uses. */
 final class Ui {
 
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM);
-
     private Ui() {
     }
 
     static String date(LocalDate date) {
-        return DATE.format(date);
+        return Appearance.formats().date(date);
+    }
+
+    static String money(long cents) {
+        return Appearance.formats().money(cents);
     }
 
     /** A round swatch in the category's colour. */
@@ -50,26 +50,56 @@ final class Ui {
 
     /** Tells the user something went wrong, in words they can act on. */
     static void error(Window owner, String header, String message) {
+        errorAlert(owner, header, message).showAndWait();
+    }
+
+    static Alert errorAlert(Window owner, String header, String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
         style(alert, owner);
         alert.setHeaderText(header);
-        alert.showAndWait();
+        icons(alert);
+        return alert;
     }
 
     /** Asks before something that cannot be undone. */
     static boolean confirm(Window owner, String header, String message, String action) {
+        Alert alert = confirmation(owner, header, message, action);
+        Optional<ButtonType> answer = alert.showAndWait();
+        return answer.isPresent() && answer.get().getButtonData() == ButtonBar.ButtonData.OK_DONE;
+    }
+
+    static Alert confirmation(Window owner, String header, String message, String action) {
         ButtonType yes = new ButtonType(action, ButtonBar.ButtonData.OK_DONE);
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message, yes, ButtonType.CANCEL);
         style(alert, owner);
         alert.setHeaderText(header);
         alert.getDialogPane().lookupButton(yes).getStyleClass().add("danger");
-        Optional<ButtonType> answer = alert.showAndWait();
-        return answer.isPresent() && answer.get() == yes;
+        icons(alert);
+        return alert;
+    }
+
+    /**
+     * Gives every button of a dialog the icon for what it does: a check to
+     * confirm or save, a cross to cancel, a bin to delete. Called once the
+     * dialog's buttons exist.
+     */
+    static void icons(javafx.scene.control.Dialog<?> dialog) {
+        for (ButtonType type : dialog.getDialogPane().getButtonTypes()) {
+            Node button = dialog.getDialogPane().lookupButton(type);
+            if (!(button instanceof javafx.scene.control.Button labelled)) {
+                continue;
+            }
+            boolean cancels = type.getButtonData().isCancelButton();
+            String icon = button.getStyleClass().contains("danger") ? Icons.DELETE
+                    : cancels ? Icons.CLOSE : Icons.CHECK;
+            labelled.setGraphic(Icons.of(icon));
+        }
     }
 
     static void style(javafx.scene.control.Dialog<?> dialog, Window owner) {
         dialog.initOwner(owner);
         dialog.getDialogPane().getStylesheets().add(ExpenseTrackerApp.stylesheet());
+        Appearance.apply(dialog.getDialogPane());
         dialog.setTitle("Expense Tracker");
         dialog.setGraphic(null);
     }

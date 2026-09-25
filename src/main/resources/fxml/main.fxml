@@ -22,6 +22,8 @@
       <ToggleButton fx:id="dashboardNav" text="Dashboard" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="expensesNav" text="Expenses" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="categoriesNav" text="Categories" styleClass="nav-item" maxWidth="Infinity"/>
+      <Label text="PREFERENCES" styleClass="nav-heading, nav-heading-spaced"/>
+      <ToggleButton fx:id="settingsNav" text="Settings" styleClass="nav-item" maxWidth="Infinity"/>
       <Region VBox.vgrow="ALWAYS"/>
       <VBox styleClass="sidebar-footer" spacing="2">
         <Label text="Packaged with xPack" styleClass="footer-title"/>

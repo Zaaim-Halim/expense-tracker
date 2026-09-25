@@ -3,7 +3,6 @@ package com.example.expensetracker.controller;
 import com.example.expensetracker.model.CategoryTotal;
 import com.example.expensetracker.model.Expense;
 import com.example.expensetracker.service.ExpenseService;
-import com.example.expensetracker.service.Money;
 import com.example.expensetracker.service.MonthSummary;
 import java.sql.SQLException;
 import java.time.YearMonth;
@@ -22,8 +21,6 @@ import javafx.scene.layout.VBox;
 
 /** This month at a glance. */
 public final class DashboardController implements Page {
-
-    private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault());
 
     @FXML private Label monthLabel;
     @FXML private Label totalValue;
@@ -53,13 +50,16 @@ public final class DashboardController implements Page {
     }
 
     void onShowAll(Runnable action) {
+        showAllButton.setGraphic(Icons.of(Icons.ARROW_FORWARD));
+        showAllButton.setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
         showAllButton.setOnAction(event -> action.run());
     }
 
     @Override
     public void refresh() {
         YearMonth month = YearMonth.now();
-        monthLabel.setText(MONTH.format(month));
+        monthLabel.setText(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault(Locale.Category.DISPLAY))
+                .format(month));
         MonthSummary summary;
         List<Expense> recent;
         try {
@@ -71,14 +71,14 @@ public final class DashboardController implements Page {
             return;
         }
 
-        totalValue.setText(Money.format(summary.totalCents()));
+        totalValue.setText(Ui.money(summary.totalCents()));
         totalCaption.setText("spent in " + month.getMonth().getDisplayName(
-                java.time.format.TextStyle.FULL, Locale.getDefault()));
+                java.time.format.TextStyle.FULL, Locale.getDefault(Locale.Category.DISPLAY)));
         countValue.setText(Integer.toString(summary.count()));
         countCaption.setText(summary.count() == 1 ? "expense this month" : "expenses this month");
         summary.top().ifPresentOrElse(top -> {
             topValue.setText(top.category().name());
-            topCaption.setText(Money.format(top.totalCents()) + " · " + percent(top, summary) + " of the month");
+            topCaption.setText(Ui.money(top.totalCents()) + " · " + percent(top, summary) + " of the month");
         }, () -> {
             topValue.setText("—");
             topCaption.setText("nothing spent yet");
@@ -123,7 +123,7 @@ public final class DashboardController implements Page {
         fill.maxWidthProperty().bind(bar.widthProperty().multiply(share));
         HBox.setHgrow(bar, Priority.ALWAYS);
 
-        Label amount = new Label(Money.format(total.totalCents()));
+        Label amount = new Label(Ui.money(total.totalCents()));
         amount.getStyleClass().add("row-amount");
         amount.setMinWidth(90);
         amount.setAlignment(Pos.CENTER_RIGHT);
@@ -147,7 +147,7 @@ public final class DashboardController implements Page {
         VBox text = new VBox(2, title, subtitle);
         HBox.setHgrow(text, Priority.ALWAYS);
 
-        Label amount = new Label(Money.format(expense.amountCents()));
+        Label amount = new Label(Ui.money(expense.amountCents()));
         amount.getStyleClass().add("row-amount");
 
         HBox row = new HBox(12, badge, text, amount);

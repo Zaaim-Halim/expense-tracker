@@ -2,7 +2,6 @@ package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.Expense;
 import com.example.expensetracker.service.ExpenseService;
-import com.example.expensetracker.service.Money;
 import java.sql.SQLException;
 import java.util.List;
 import javafx.beans.property.ReadOnlyObjectWrapper;
@@ -59,7 +58,7 @@ public final class ExpensesController implements Page {
         categoryColumn.setComparator((a, b) -> a.category().name().compareToIgnoreCase(b.category().name()));
         amountColumn.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue()));
         amountColumn.setCellFactory(column -> {
-            TableCell<Expense, Expense> cell = cell(expense -> new Label(Money.format(expense.amountCents())), "amount-cell");
+            TableCell<Expense, Expense> cell = cell(expense -> new Label(Ui.money(expense.amountCents())), "amount-cell");
             cell.setAlignment(Pos.CENTER_RIGHT);
             return cell;
         });
@@ -101,7 +100,7 @@ public final class ExpensesController implements Page {
         long count = countAndTotal[0];
         summaryLabel.setText(count == 0 ? "No expenses recorded yet"
                 : count + (count == 1 ? " expense" : " expenses") + " · "
-                        + Money.format(countAndTotal[1]) + " in total");
+                        + Ui.money(countAndTotal[1]) + " in total");
     }
 
     private Expense selected() {
@@ -119,7 +118,7 @@ public final class ExpensesController implements Page {
             return;
         }
         if (!Ui.confirm(window(), "Delete this expense?",
-                expense.description() + ", " + Money.format(expense.amountCents()) + " on "
+                expense.description() + ", " + Ui.money(expense.amountCents()) + " on "
                         + Ui.date(expense.date()) + ".\nThis cannot be undone.", "Delete")) {
             return;
         }

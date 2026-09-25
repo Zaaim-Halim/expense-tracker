@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<ScrollPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.example.expensetracker.controller.SettingsController"
+            fitToWidth="true" styleClass="page-scroll">
+  <VBox styleClass="page" spacing="22">
+    <VBox spacing="4">
+      <Label text="Settings" styleClass="page-title"/>
+      <Label text="Saved as you change them, and kept across updates." styleClass="page-subtitle"/>
+    </VBox>
+
+    <VBox styleClass="card" spacing="4">
+      <Label text="Appearance" styleClass="card-title"/>
+      <VBox fx:id="appearanceRows" spacing="0"/>
+    </VBox>
+
+    <VBox styleClass="card" spacing="4">
+      <Label text="Dates and numbers" styleClass="card-title"/>
+      <VBox fx:id="formatRows" spacing="0"/>
+    </VBox>
+
+    <VBox styleClass="card" spacing="4">
+      <Label text="Keyboard shortcuts" styleClass="card-title"/>
+      <GridPane fx:id="shortcutGrid" styleClass="shortcut-grid" hgap="24" vgap="10"/>
+    </VBox>
+  </VBox>
+</ScrollPane>

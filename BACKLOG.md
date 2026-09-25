@@ -41,12 +41,14 @@ What has been proven, by which check. `validate-install.sh` is
 | Uninstall removes application and desktop entry | ✅ | validate-install.sh |
 | User data survives uninstall | ✅ | validate-install.sh |
 | Installer wizard (window) | ☐ | manual |
-| Full update | ☐ | step 2 |
-| Delta update | ☐ | step 2 |
-| Restart onto the new version | ☐ | step 2 |
-| Data preserved across updates | ☐ | step 2 |
+| Full update | ☐ | not yet: every update so far had a delta |
+| Delta update | ✅ | 1.0.0 → 1.0.1 from CI: 157 696 bytes downloaded instead of 51 MB, 127 of 128 files reused, signature verified |
+| Restart onto the new version | ✅ | 1.0.1 started, reported healthy and was committed; 1.0.0 kept for rollback |
+| Data preserved across updates | ✅ | 1.0.1: the same expenses and total as before |
 | Multiple sequential updates | ☐ | step 2 |
-| Update while the application runs | ☐ | step 2 |
+| Settings survive an update | ☐ | 1.1.0 writes the first settings file; the release after it can prove it |
+| "New version ready" notice | ❌ | xPack gap: installers leave the notice out (below) |
+| Update while the application runs | ✅ | 1.0.1 was found and staged by the running copy's periodic check |
 | Failed start rolls back | ☐ | step 3 |
 | Corrupted package refused | ☐ | step 3 |
 | Invalid update index refused | ☐ | step 3 |
@@ -100,6 +102,10 @@ decision for xPack, not something to work around here.
   platform, chosen by the machine that builds. Packaging for another platform
   from one machine would pick the wrong ones; the plugin cannot yet choose
   dependencies per target.
+- **The "new version ready" notice never appears.** The application asks for
+  it (`<notify>true</notify>`), but xPack's installer builder does not pack
+  the notice program, and only an installer can add it: every update is
+  applied silently at the next start. Seen on 1.0.0 → 1.0.1.
 - **Knowing when an uninstall has finished.** The uninstaller hands the work
   to a copy of itself and returns at once (on Windows it has to, so its own
   file can be deleted). A script cannot tell when the installation is gone

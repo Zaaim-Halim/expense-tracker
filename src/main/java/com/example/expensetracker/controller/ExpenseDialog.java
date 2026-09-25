@@ -24,6 +24,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
+import javafx.util.converter.LocalDateStringConverter;
 
 /** Adds a new expense, or changes one. */
 public final class ExpenseDialog {
@@ -66,6 +67,9 @@ public final class ExpenseDialog {
         }
         DatePicker date = new DatePicker(existing == null ? LocalDate.now() : existing.date());
         date.setMaxWidth(Double.MAX_VALUE);
+        date.setConverter(new LocalDateStringConverter(Appearance.formats().dateFormatter(),
+                Appearance.formats().dateFormatter()));
+        date.setPromptText(Appearance.formats().date(LocalDate.now()));
         TextArea note = new TextArea(existing == null ? "" : existing.note());
         note.setPromptText("Optional");
         note.setPrefRowCount(3);
@@ -96,6 +100,7 @@ public final class ExpenseDialog {
         dialog.getDialogPane().getButtonTypes().setAll(ButtonType.CANCEL, save);
         Button saveButton = (Button) dialog.getDialogPane().lookupButton(save);
         saveButton.getStyleClass().add("primary");
+        Ui.icons(dialog);
         saveButton.disableProperty().bind(description.textProperty().isEmpty()
                 .or(amount.textProperty().isEmpty()));
 

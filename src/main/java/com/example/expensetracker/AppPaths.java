@@ -54,6 +54,11 @@ public record AppPaths(Path dataDir) {
         return dataDir.resolve("expenses.db");
     }
 
+    /** The user's settings, beside the data they apply to, so updates keep them. */
+    public Path settings() {
+        return dataDir.resolve("settings.properties");
+    }
+
     /** Creates the data directory if it does not exist yet. */
     public void create() throws IOException {
         Files.createDirectories(dataDir);

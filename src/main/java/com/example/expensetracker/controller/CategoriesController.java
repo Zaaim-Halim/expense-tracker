@@ -11,6 +11,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -34,6 +35,17 @@ public final class CategoriesController implements Page {
         newButton.setOnAction(event -> edit(null));
         list.setCellFactory(view -> new CategoryCell());
         list.setPlaceholder(new Label("No categories"));
+        list.setOnKeyPressed(event -> {
+            Category selected = list.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                return;
+            }
+            if (event.getCode() == KeyCode.ENTER) {
+                edit(selected);
+            } else if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
+                delete(selected);
+            }
+        });
     }
 
     @Override

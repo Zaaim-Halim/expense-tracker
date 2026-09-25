@@ -18,7 +18,7 @@ that **xPack itself works** when it packages and maintains a real desktop
 application. Why it exists, what it proves so far and what comes next are in
 [BACKLOG.md](BACKLOG.md).
 
-## What it does (1.0.0)
+## What it does
 
 - **Dashboard:** this month's total, how many expenses, the top category,
   spending by category and the latest expenses.
@@ -27,6 +27,12 @@ application. Why it exists, what it proves so far and what comes next are in
 - **Categories:** eight to start with; add your own, rename, recolour; a
   category still holding expenses cannot be deleted, so no expense is ever lost
   with it.
+- **Settings:** light, dark or the system's theme, six accent colours, and
+  how dates, amounts and the first day of the week are written. Saved as they
+  change, in `settings.properties` beside the data, so updates keep them.
+- **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
+  elsewhere), listed in Settings: N for a new expense, 1–3 for the pages,
+  comma for Settings; Enter edits and Delete removes the selected row.
 - **Your data stays yours:** everything is in one SQLite file outside the
   installation, so updating or uninstalling the application never touches it.
 
@@ -41,7 +47,8 @@ are exact.
 | Windows | `%APPDATA%\Expense Tracker\expenses.db` |
 | Linux | `$XDG_DATA_HOME/expense-tracker/expenses.db`, or `~/.local/share/expense-tracker/` |
 
-`--data-dir=DIR` keeps it somewhere else.
+`--data-dir=DIR` keeps it somewhere else. Settings are in
+`settings.properties` in the same directory.
 
 ## Command line
 
@@ -162,7 +169,9 @@ java -cp "target/classes:$(cat target/cp.txt)" com.example.expensetracker.Main -
 ```
 
 Draws every screen, with sample data in a throwaway database, into PNG files:
-the three pages, their empty states and the dialogs. The class path file comes
+every page in the light and the dark theme, the empty states, the dialogs,
+the calendar with each first day of the week, and a sheet of every control in
+every state (hover, pressed, keyboard focus, disabled, an open drop-down). The class path file comes
 from `mvn dependency:build-classpath -Dmdep.outputFile=target/cp.txt
 -Dmdep.includeScope=runtime`.
 
@@ -178,6 +187,7 @@ src/main/java/com/example/expensetracker/
   model/                    Expense, Category, CategoryTotal
   repository/               SQLite: schema, versioned migrations, queries
   service/                  the rules, money, monthly summaries
+  settings/                 the settings file, formats, the system's theme
   controller/               pages, dialogs, icons, the screen renderer
 src/main/resources/
   fxml/                     the window and its pages

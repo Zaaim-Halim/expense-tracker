@@ -1,9 +1,11 @@
 package com.example.expensetracker;
 
+import com.example.expensetracker.controller.Appearance;
 import com.example.expensetracker.controller.MainController;
 import com.example.expensetracker.controller.Render;
 import com.example.expensetracker.repository.Database;
 import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.settings.SettingsStore;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Path;
@@ -51,6 +53,13 @@ public final class ExpenseTrackerApp extends Application {
             return;
         }
 
+        // Never fails: a bad settings file means the defaults, so the window
+        // always opens and reports its start.
+        SettingsStore settings = SettingsStore.load(paths.settings());
+        settings.problem().ifPresent(problem -> System.err.println("expense-tracker: " + problem));
+        Appearance.load(settings);
+        Appearance.readSystemTheme();
+
         Scene scene = createScene(new ExpenseService(database));
         stage.setTitle(AppInfo.NAME);
         for (int size : new int[] {32, 64, 128, 256}) {
@@ -62,6 +71,12 @@ public final class ExpenseTrackerApp extends Application {
         stage.setWidth(1180);
         stage.setHeight(760);
         stage.setScene(scene);
+        // The system theme may have changed while the window was behind others.
+        stage.focusedProperty().addListener((observable, before, focused) -> {
+            if (focused) {
+                Appearance.followSystem();
+            }
+        });
         stage.show();
         // The window is up: tell xPack this version works.
         Platform.runLater(HealthReport::started);
@@ -87,6 +102,8 @@ public final class ExpenseTrackerApp extends Application {
         controller.setup(service);
         Scene scene = new Scene(root, 1180, 760);
         scene.getStylesheets().add(stylesheet());
+        Appearance.apply(root);
+        controller.installShortcuts(scene);
         // For the renderer, which switches pages to draw each of them.
         scene.setUserData(controller);
         return scene;

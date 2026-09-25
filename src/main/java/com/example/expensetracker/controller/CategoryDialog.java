@@ -87,6 +87,7 @@ public final class CategoryDialog {
         dialog.getDialogPane().getButtonTypes().setAll(ButtonType.CANCEL, save);
         Button saveButton = (Button) dialog.getDialogPane().lookupButton(save);
         saveButton.getStyleClass().add("primary");
+        Ui.icons(dialog);
         saveButton.disableProperty().bind(name.textProperty().isEmpty());
 
         Category[] saved = new Category[1];

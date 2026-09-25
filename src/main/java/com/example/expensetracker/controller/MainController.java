@@ -9,10 +9,12 @@ import java.util.Map;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.Label;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.StackPane;
 
 /** The sidebar, and the page it shows. */
@@ -22,7 +24,8 @@ public final class MainController {
     public enum Section {
         DASHBOARD("/fxml/dashboard.fxml"),
         EXPENSES("/fxml/expenses.fxml"),
-        CATEGORIES("/fxml/categories.fxml");
+        CATEGORIES("/fxml/categories.fxml"),
+        SETTINGS("/fxml/settings.fxml");
 
         final String fxml;
 
@@ -35,6 +38,7 @@ public final class MainController {
     @FXML private ToggleButton dashboardNav;
     @FXML private ToggleButton expensesNav;
     @FXML private ToggleButton categoriesNav;
+    @FXML private ToggleButton settingsNav;
     @FXML private Label brandIcon;
     @FXML private Label versionLabel;
 
@@ -49,13 +53,18 @@ public final class MainController {
         dashboardNav.setGraphic(Icons.of(Icons.DASHBOARD));
         expensesNav.setGraphic(Icons.of(Icons.LIST));
         categoriesNav.setGraphic(Icons.of(Icons.TAG));
+        settingsNav.setGraphic(Icons.of(Icons.SETTINGS));
+        dashboardNav.setTooltip(new Tooltip(Shortcuts.hint("Dashboard", Shortcuts.DASHBOARD)));
+        expensesNav.setTooltip(new Tooltip(Shortcuts.hint("Expenses", Shortcuts.EXPENSES)));
+        categoriesNav.setTooltip(new Tooltip(Shortcuts.hint("Categories", Shortcuts.CATEGORIES)));
+        settingsNav.setTooltip(new Tooltip(Shortcuts.hint("Settings", Shortcuts.SETTINGS)));
         javafx.scene.image.ImageView logo = new javafx.scene.image.ImageView(
                 ExpenseTrackerApp.resource("/icons/brand.png").toExternalForm());
         logo.setFitWidth(34);
         logo.setFitHeight(34);
         logo.setSmooth(true);
         brandIcon.setGraphic(logo);
-        for (ToggleButton button : new ToggleButton[] {dashboardNav, expensesNav, categoriesNav}) {
+        for (ToggleButton button : new ToggleButton[] {dashboardNav, expensesNav, categoriesNav, settingsNav}) {
             button.setToggleGroup(navigation);
         }
         // A section stays selected: clicking the current one again is not "none".
@@ -72,6 +81,32 @@ public final class MainController {
     public void setup(ExpenseService expenseService) {
         this.service = expenseService;
         navigation.selectToggle(dashboardNav);
+        // A changed setting shows at once: the theme on the window, and dates
+        // and amounts on the page in front of the user. Other pages redraw
+        // when they are next shown.
+        Appearance.onChange(() -> {
+            if (content.getScene() != null) {
+                Appearance.apply(content.getScene().getRoot());
+            }
+            dataChanged();
+        });
+    }
+
+    /**
+     * The window's keyboard shortcuts. They belong to the main window only, so
+     * none fires while a dialog is open, and none is a plain key, so none
+     * fires while the user types.
+     */
+    public void installShortcuts(Scene scene) {
+        scene.getAccelerators().put(Shortcuts.DASHBOARD, () -> select(Section.DASHBOARD));
+        scene.getAccelerators().put(Shortcuts.EXPENSES, () -> select(Section.EXPENSES));
+        scene.getAccelerators().put(Shortcuts.CATEGORIES, () -> select(Section.CATEGORIES));
+        scene.getAccelerators().put(Shortcuts.SETTINGS, () -> select(Section.SETTINGS));
+        scene.getAccelerators().put(Shortcuts.NEW_EXPENSE, () -> {
+            if (ExpenseDialog.show(scene.getWindow(), service, null)) {
+                dataChanged();
+            }
+        });
     }
 
     /** Shows a section, as if its sidebar entry was clicked. */
@@ -80,12 +115,16 @@ public final class MainController {
             case DASHBOARD -> dashboardNav;
             case EXPENSES -> expensesNav;
             case CATEGORIES -> categoriesNav;
+            case SETTINGS -> settingsNav;
         });
     }
 
     private Section sectionOf(Toggle toggle) {
         if (toggle == expensesNav) {
             return Section.EXPENSES;
+        }
+        if (toggle == settingsNav) {
+            return Section.SETTINGS;
         }
         return toggle == categoriesNav ? Section.CATEGORIES : Section.DASHBOARD;
     }
