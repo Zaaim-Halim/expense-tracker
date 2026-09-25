@@ -61,21 +61,21 @@ Work proceeds one step at a time, stopping after each.
 
 1. **✅ 1.0.0 and the install lifecycle** — the application (expenses,
    categories, dashboard, SQLite, command line) and `validate-install.sh`.
-2. **Updates** — several versions built and served from a local update server
-   (xPack accepts `http://127.0.0.1` for this). Full and delta updates, restart
-   onto the new version, data preserved, sequential updates, updating while
-   the application runs.
+2. **Updates** — versions released by CI to GitHub Releases, with the update
+   index on GitHub Pages, and received by a copy installed from a release:
+   full and delta updates, restart onto the new version, data preserved,
+   sequential updates, updating while the application runs. 1.0.0 → 1.0.1 is
+   the first.
 3. **Failure and recovery** — a version that fails to start rolls back;
    corrupted packages, a bad index, an interrupted download and a full disk
    are refused or recovered from.
-4. **The application's own versions**, each adding its row to the matrix:
-   - 1.1.0: search, filtering, sorting, settings, theme, configurable data
-     directory, a settings file preserved across updates
-   - 1.2.0: charts, statistics, monthly summaries, category analysis
-   - 1.3.0: CSV and JSON export, an export directory
-   - 2.0.0: a database migration, a new settings structure
-5. **Cross-platform packaging** — Windows and Linux packages from their own
-   machines, and what differs.
+4. **The application's own versions** — each new version released by CI and
+   received as an update by an installed copy, with what it made xPack prove
+   recorded here.
+5. **Cross-platform packaging** — CI builds every platform on its own
+   machine (macOS arm64 and x64, Windows x64, Linux x64 and arm64) since
+   1.0.0. Still to do: install and update by hand on Windows and Linux, and
+   record what differs.
 
 ## xPack gaps found
 
