@@ -69,10 +69,12 @@ class OptionsAndPathsTest {
         assertEquals(2, Cli.run(Options.parse(new String[] {"--add", "Tea", "1", "Nope"}), paths, o, e));
         assertEquals(0, Cli.run(Options.parse(new String[] {"--status"}), paths, o, e));
 
+        // One key=value per line, in the platform's own line ending.
         String status = out.toString(StandardCharsets.UTF_8);
-        assertEquals(true, status.contains("expenses=1\n"), status);
-        assertEquals(true, status.contains("total=3.50\n"), status);
-        assertEquals(true, status.contains("data.dir=" + paths.dataDir()), status);
+        List<String> lines = status.lines().toList();
+        assertEquals(true, lines.contains("expenses=1"), status);
+        assertEquals(true, lines.contains("total=3.50"), status);
+        assertEquals(true, lines.contains("data.dir=" + paths.dataDir()), status);
         assertEquals(true, err.toString(StandardCharsets.UTF_8).contains("no category called \"Nope\""));
     }
 }

@@ -42,12 +42,24 @@ public final class Database implements AutoCloseable {
     /** Opens the database at {@code file}, creating or upgrading it as needed. */
     public static Database open(Path file) throws SQLException {
         Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("PRAGMA foreign_keys = ON");
+        try {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys = ON");
+            }
+            Database database = new Database(connection);
+            database.migrate();
+            return database;
+        } catch (SQLException | RuntimeException e) {
+            // Nobody else holds the connection to close it. Left open, it
+            // keeps the file locked on Windows, so it could not be moved or
+            // deleted for as long as the application runs.
+            try {
+                connection.close();
+            } catch (SQLException closing) {
+                e.addSuppressed(closing);
+            }
+            throw e;
         }
-        Database database = new Database(connection);
-        database.migrate();
-        return database;
     }
 
     public Connection connection() {
