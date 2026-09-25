@@ -56,7 +56,11 @@ else
     fi
     [ "$actual" = "$expected" ] || { echo "$name.$archive does not match its checksum" >&2; exit 1; }
     if [ "$archive" = zip ]; then
-        unzip -q "$work/$name.$archive" -d "$work"
+        if command -v unzip >/dev/null; then
+            unzip -q "$work/$name.$archive" -d "$work"
+        else
+            7z x -bd -o"$work" "$work/$name.$archive" >/dev/null
+        fi
     else
         tar xzf "$work/$name.$archive" -C "$work"
     fi
@@ -68,6 +72,11 @@ fi
 
 plugin_version="$(sed -n '/<artifactId>xpack-maven-plugin<\/artifactId>/{n;s:.*<version>\(.*\)</version>.*:\1:p;}' "$here/pom.xml" | head -1)"
 repository="$("$MVN" -q help:evaluate -Dexpression=settings.localRepository -DforceStdout 2>/dev/null || echo "$HOME/.m2/repository")"
+# Maven answers with a Windows path on Windows; the tests below need the
+# shell's own form of it.
+if command -v cygpath >/dev/null; then
+    repository="$(cygpath -u "$repository")"
+fi
 plugin="$repository/io/xpack/xpack-maven-plugin/$plugin_version/xpack-maven-plugin-$plugin_version.jar"
 marker="$repository/io/xpack/xpack-maven-plugin/$plugin_version/built-from-v$version"
 if [ -f "$plugin" ] && [ -f "$marker" ]; then

@@ -1,0 +1,254 @@
+name: Release
+
+# Builds, signs and publishes Expense Tracker. Every platform is built on a
+# machine of its own: JavaFX's jars carry native code for the platform that
+# resolves them, and the runtime is linked from that machine's JDK, so one
+# machine cannot build for another.
+#
+# Each build is one Maven command, `mvn verify -Prelease`. It produces the
+# signed package, the installer, deltas from the last three releases and the
+# update index. This file only puts the inputs in place and uploads what Maven
+# made; it builds nothing itself.
+#
+# A tag vX.Y.Z publishes. A manual run is a dry run: it builds and checks
+# everything with a throwaway key and publishes nothing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two releases at once would race for the update index.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    # Only a tag's run can read the release key: the `release` environment is
+    # restricted to version tags. A dry run uses an environment holding
+    # nothing.
+    environment: ${{ github.ref_type == 'tag' && 'release' || 'dry-run' }}
+    strategy:
+      # One platform failing must not hide whether the others are fine. The
+      # publish job still needs all of them.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-latest
+          # Free for public repositories only.
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          # The last Intel image GitHub offers, retired in August 2027.
+          - platform: macos-x64
+            runner: macos-15-intel
+          - platform: macos-arm64
+            runner: macos-14
+          - platform: windows-x64
+            runner: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # jlink links the bundled runtime from this JDK. No Maven cache: the
+      # local repository must hold exactly the earlier packages downloaded
+      # below, never one left over from another run.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Work out the version
+        id: version
+        run: |
+          set -euo pipefail
+          declared=$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            # A tag that disagrees with the pom would publish files whose
+            # names promise a version the application does not report.
+            if [ "${GITHUB_REF_NAME#v}" != "$declared" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match the pom's version $declared"
+              exit 1
+            fi
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+
+      - name: Install xPack
+        run: scripts/setup-xpack.sh
+
+      - name: Fetch the earlier releases to build deltas from
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(scripts/previous-releases.sh "${{ matrix.platform }}" "${{ steps.version.outputs.version }}")
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign and index
+        env:
+          SIGNING_KEY: ${{ secrets.EXPENSE_TRACKER_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/signing.json"
+          trap 'rm -f "$key" "$RUNNER_TEMP/signing.pub.json"' EXIT
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            if [ -z "${SIGNING_KEY:-}" ]; then
+              echo "::error::no EXPENSE_TRACKER_SIGNING_KEY in the release environment"
+              exit 1
+            fi
+            (umask 077 && printf '%s' "$SIGNING_KEY" > "$key")
+            # The committed public key, not one derived from the secret: the
+            # index goal verifies every package against it, so a secret that
+            # does not match what installed copies trust stops the release
+            # here.
+            public="keys/release.pub.json"
+          else
+            "$HOME/.xpack/sdk/$(sed -n 's:.*<xpack.release>\(.*\)</xpack.release>.*:\1:p' pom.xml)/xpack" \
+              keygen --out "$key" >/dev/null
+            public="$RUNNER_TEMP/signing.pub.json"
+          fi
+          mvn -B verify -Prelease "-Dxpack.key=$key" "-Dxpack.publicKey=$public"
+
+      - name: Check every delta was built
+        run: |
+          set -euo pipefail
+          # The delta goal reads the list of earlier versions from the local
+          # repository; if that went wrong it would report a first release
+          # and carry on, and every user would download the whole package.
+          expected="${{ steps.previous.outputs.count }}"
+          built=$(find target/xpack/dist -maxdepth 1 -name '*.xpkgd' | wc -l | tr -d ' ')
+          echo "earlier releases: $expected, deltas built: $built"
+          if [ "$built" != "$expected" ]; then
+            echo "::error::expected $expected deltas, built $built"
+            exit 1
+          fi
+
+      - name: Collect what gets published
+        run: |
+          set -euo pipefail
+          mkdir -p out/release "out/updates/${{ matrix.platform }}"
+          dist=target/xpack/dist
+          # The installer: a file on Windows and Linux; on macOS an .app
+          # directory, which Maven already zipped.
+          for f in "$dist"/*.xpkg "$dist"/*.xpkgd "$dist"/*-Setup.exe "$dist"/*-installer "$dist"/Install-*.zip; do
+            [ -f "$f" ] && cp "$f" out/release/
+          done
+          cp "target/xpack/site/${{ matrix.platform }}/stable.json" "out/updates/${{ matrix.platform }}/"
+          ls -la out/release out/updates/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: incoming
+
+      - name: Gather the files
+        run: |
+          set -euo pipefail
+          mkdir -p dist site/updates
+          for platform in incoming/release-*; do
+            cp "$platform"/release/* dist/
+            cp -R "$platform"/updates/. site/updates/
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -la dist
+          find site -type f
+
+      # A published package is never replaced. Deltas and installed copies
+      # depend on its exact bytes, so a re-run must not upload new ones under
+      # the same name. A draft left by a failed run was never seen by anyone
+      # and is started over.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" = "true" ]; then
+              gh release delete "$tag" --yes
+            else
+              echo "::error::release $tag is already published; its files are never replaced"
+              exit 1
+            fi
+          fi
+          notes=$(cat <<EOF
+          ## Installing
+
+          Download the installer for your platform and run it:
+
+          | Platform | Installer |
+          | --- | --- |
+          | macOS, Apple Silicon | \`Install-Expense-Tracker-${tag#v}-macos-arm64.zip\` |
+          | macOS, Intel | \`Install-Expense-Tracker-${tag#v}-macos-x64.zip\` |
+          | Windows | \`Expense-Tracker-${tag#v}-windows-x64-Setup.exe\` |
+          | Linux | \`Expense-Tracker-${tag#v}-linux-x64-installer\` (or \`-linux-arm64-\`) |
+
+          Builds are not code-signed yet, so macOS quarantines a browser
+          download and Windows SmartScreen flags it.
+
+          An installed copy updates itself: the \`.xpkg\` packages and
+          \`.xpkgd\` deltas here are what it downloads.
+          EOF
+          )
+          gh release create "$tag" --draft --verify-tag \
+            --title "Expense Tracker ${tag#v}" --notes "$notes" dist/*
+          gh release edit "$tag" --draft=false
+
+      # The whole site is replaced on every release, and every release
+      # carries every platform, so it always holds each platform's latest
+      # index.
+      - name: Write the site
+        run: |
+          set -euo pipefail
+          touch site/.nojekyll
+          cat > site/index.html <<EOF
+          <!doctype html><meta charset="utf-8"><title>Expense Tracker updates</title>
+          <p>Update index for <a href="https://github.com/${{ github.repository }}">Expense Tracker</a>
+          ${GITHUB_REF_NAME}. Installed copies read <code>updates/&lt;platform&gt;/stable.json</code>.</p>
+          EOF
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # Only after the release is public: an index naming files that cannot be
+  # downloaded yet would fail every update check in the meantime. A job of
+  # its own because deploying to Pages needs permissions nothing else here
+  # should have.
+  updates:
+    name: publish the update index
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
