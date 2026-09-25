@@ -97,7 +97,10 @@ builds on each platform's own machine with one Maven command,
   copies read:
   `https://zaaim-halim.github.io/expense-tracker/updates/<platform>/stable.json`
 
-The release key signs packages in CI only; its public half is in `keys/`.
+The release key signs packages in CI only, in the `release` environment that
+only version tags can use. Its public half is `keys/release.pub.json`,
+fingerprint `b319-450c-e3c8-23e5`: every installed copy trusts that key and no
+other, and CI stops a release whose packages it does not verify.
 
 ## Building and running
 
