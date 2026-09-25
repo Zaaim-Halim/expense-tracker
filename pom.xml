@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Expense Tracker: a small desktop application, and the reference
+       application xPack is validated against. See README.md and BACKLOG.md. -->
+  <groupId>io.xpack.examples</groupId>
+  <artifactId>expense-tracker</artifactId>
+  <version>1.0.0</version>
+  <name>Expense Tracker</name>
+  <description>Track what you spend, by category and by month.</description>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Reproducible builds: the same version always yields the same jars,
+         so a delta between two versions carries only what really changed. -->
+    <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+    <javafx.version>21.0.12</javafx.version>
+    <sqlite.version>3.53.4.0</sqlite.version>
+    <junit.version>6.1.3</junit.version>
+    <!-- The application icon, in the format this platform's desktop uses;
+         the profiles at the end choose it. -->
+    <app.icon>icon.png</app.icon>
+    <app.icons>${project.basedir}/src/xpack/icons/linux</app.icons>
+    <!-- Only macOS installers are a directory (an .app bundle) that needs
+         zipping before it can be uploaded; the macOS profiles turn this on. -->
+    <installer.zip.skip>true</installer.zip.skip>
+    <app.platform>linux</app.platform>
+    <!-- Where each version's files are downloaded from: its GitHub release. -->
+    <releases.repository>Zaaim-Halim/expense-tracker</releases.repository>
+    <!-- The xPack release this application is built with. Its binaries and
+         its Maven plugin are installed by scripts/setup-xpack.sh, here and in
+         CI alike. -->
+    <xpack.release>0.4.1</xpack.release>
+    <!-- What the xPack plugin needs, so a plain `mvn package` builds and
+         signs. Each can be overridden with -D, as CI and the validation do. -->
+    <xpack.home>${user.home}/.xpack/sdk/${xpack.release}</xpack.home>
+    <!-- A signing key for builds on this machine, kept outside the
+         repository. Releases are signed in CI with the release key instead;
+         every installed copy accepts updates signed by the key its package
+         was signed with, and no other. -->
+    <xpack.key>${user.home}/.xpack/keys/expense-tracker/signing.json</xpack.key>
+    <xpack.publicKey>${user.home}/.xpack/keys/expense-tracker/signing.pub.json</xpack.publicKey>
+  </properties>
+
+  <dependencies>
+    <!-- JavaFX is not part of the JDK. Its jars carry the native code for the
+         platform building them, chosen by JavaFX's own build. They go on the
+         class path of the packaged application, beside the other jars. -->
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-controls</artifactId>
+      <version>${javafx.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-fxml</artifactId>
+      <version>${javafx.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+      <version>${sqlite.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <!-- Filtered, so the application can say which version it is. -->
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>expense-tracker.properties</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>expense-tracker.properties</exclude>
+        </excludes>
+      </resource>
+    </resources>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.15.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+      </plugin>
+
+      <plugin>
+        <groupId>io.xpack</groupId>
+        <artifactId>xpack-maven-plugin</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <configuration>
+          <id>io.xpack.examples.expensetracker</id>
+          <name>Expense Tracker</name>
+          <publisher>xPack examples</publisher>
+          <mainClass>com.example.expensetracker.Main</mainClass>
+          <jvmArgs>
+            <jvmArg>-Xmx512m</jvmArg>
+          </jvmArgs>
+          <!-- Copied into the package, so <desktop><icon> can name it. -->
+          <payloadResources>${app.icons}</payloadResources>
+
+          <!-- A runtime linked for the application, so the user needs no
+               Java. Exactly the modules jdeps reports (print-module-deps) for
+               the application and every library it ships; jlink adds what
+               these need in turn, such as java.logging and java.xml. -->
+          <runtime>
+            <bundled>true</bundled>
+            <modules>
+              <module>java.base</module>
+              <module>java.desktop</module>
+              <module>java.scripting</module>
+              <module>java.sql</module>
+              <module>jdk.jfr</module>
+              <module>jdk.unsupported</module>
+            </modules>
+          </runtime>
+
+          <!-- Where installed copies look for updates: the index CI
+               publishes to this repository's GitHub Pages, one per platform
+               (the platform is appended). The packages it names are attached
+               to the repository's GitHub Releases. Every installed copy keeps
+               this address, so it must not change. Override with
+               -Dxpack.updateBaseUrl to publish somewhere else. -->
+          <updateBaseUrl>https://zaaim-halim.github.io/expense-tracker/updates</updateBaseUrl>
+          <update>
+            <channel>stable</channel>
+            <!-- Also while the window is open, as often as xPack allows. -->
+            <checkWhileRunning>true</checkWhileRunning>
+            <checkIntervalMinutes>15</checkIntervalMinutes>
+            <!-- Say so when a new version is ready for the next start. -->
+            <notify>true</notify>
+            <severity>recommended</severity>
+          </update>
+
+          <!-- Proves the application started, rather than leaving xPack to
+               infer it: the application writes XPACK_HEALTH_FILE once its
+               window is up, or once a command-line request succeeded. -->
+          <health>
+            <startupTimeoutSeconds>30</startupTimeoutSeconds>
+            <requireStartupReport>true</requireStartupReport>
+          </health>
+
+          <desktop>
+            <shortcut>true</shortcut>
+            <icon>${app.icon}</icon>
+            <categories>
+              <category>Office</category>
+              <category>Finance</category>
+            </categories>
+          </desktop>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>runtime</goal>
+              <goal>payload</goal>
+              <goal>manifest</goal>
+              <goal>pack</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- `mvn package -Pinstaller`: the package, and the installer a user runs,
+         in target/xpack/dist. -->
+    <profile>
+      <id>installer</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>io.xpack</groupId>
+            <artifactId>xpack-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>installer</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>installer</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- `mvn install -Prelease`: everything a release needs, in
+         target/xpack/dist and target/xpack/site:
+           package   the signed package, and the installer (zipped on macOS)
+           verify    deltas from the last three versions in the Maven
+                     repository, and the update index naming the files'
+                     GitHub download address
+           install   keeps this version's package in the Maven repository,
+                     so the next version can build a delta from it
+         CI then uploads them; the upload builds nothing. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>io.xpack</groupId>
+            <artifactId>xpack-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>installer</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>installer</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>updates</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>delta</goal>
+                  <goal>index</goal>
+                </goals>
+                <configuration>
+                  <packageUrl>https://github.com/${releases.repository}/releases/download/v${project.version}</packageUrl>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>3.8.0</version>
+            <executions>
+              <execution>
+                <id>installer-zip</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <skipAssembly>${installer.zip.skip}</skipAssembly>
+                  <descriptors>
+                    <descriptor>src/assembly/macos-installer.xml</descriptor>
+                  </descriptors>
+                  <finalName>Install-Expense-Tracker-${project.version}-${app.platform}</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                  <outputDirectory>${project.build.directory}/xpack/dist</outputDirectory>
+                  <!-- Uploaded, not published to the Maven repository. -->
+                  <attach>false</attach>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Each desktop wants its own icon format. -->
+    <profile>
+      <id>macos-arm64</id>
+      <activation>
+        <os><family>mac</family><arch>aarch64</arch></os>
+      </activation>
+      <properties>
+        <app.icon>icon.icns</app.icon>
+        <app.icons>${project.basedir}/src/xpack/icons/macos</app.icons>
+        <app.platform>macos-arm64</app.platform>
+        <installer.zip.skip>false</installer.zip.skip>
+      </properties>
+    </profile>
+    <profile>
+      <id>macos-x64</id>
+      <activation>
+        <os><family>mac</family><arch>x86_64</arch></os>
+      </activation>
+      <properties>
+        <app.icon>icon.icns</app.icon>
+        <app.icons>${project.basedir}/src/xpack/icons/macos</app.icons>
+        <app.platform>macos-x64</app.platform>
+        <installer.zip.skip>false</installer.zip.skip>
+      </properties>
+    </profile>
+    <profile>
+      <id>windows-icon</id>
+      <activation>
+        <os><family>windows</family></os>
+      </activation>
+      <properties>
+        <app.icon>icon.ico</app.icon>
+        <app.icons>${project.basedir}/src/xpack/icons/windows</app.icons>
+        <app.platform>windows-x64</app.platform>
+      </properties>
+    </profile>
+  </profiles>
+</project>

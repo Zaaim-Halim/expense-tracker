@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fcd34d"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="shadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#064e3b" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#064e3b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- The tile, on the grid macOS uses: 824 of 1024, corners of 185. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+
+  <!-- A receipt: a sheet with a torn, zigzag bottom edge. -->
+  <ellipse cx="500" cy="800" rx="230" ry="36" fill="url(#shadow)"/>
+  <path d="M300 230 Q300 200 330 200 L670 200 Q700 200 700 230 L700 770
+           L666 740 L633 770 L600 740 L566 770 L533 740 L500 770 L466 740
+           L433 770 L400 740 L366 770 L333 740 L300 770 Z" fill="#ffffff"/>
+  <!-- Its lines: a heading, then amounts. -->
+  <rect x="360" y="280" width="180" height="34" rx="17" fill="#0d9488"/>
+  <rect x="360" y="370" width="280" height="22" rx="11" fill="#99f6e4"/>
+  <rect x="360" y="430" width="230" height="22" rx="11" fill="#99f6e4"/>
+  <rect x="360" y="490" width="260" height="22" rx="11" fill="#99f6e4"/>
+  <rect x="360" y="580" width="140" height="30" rx="15" fill="#134e4a"/>
+
+  <!-- A coin, resting on the receipt's corner. -->
+  <circle cx="690" cy="690" r="128" fill="#ffffff"/>
+  <circle cx="690" cy="690" r="112" fill="url(#coin)"/>
+  <circle cx="690" cy="690" r="82" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="10"/>
+  <rect x="674" y="628" width="32" height="124" rx="16" fill="#ffffff" fill-opacity="0.9"/>
+</svg>

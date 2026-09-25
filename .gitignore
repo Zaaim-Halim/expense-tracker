@@ -1,0 +1,26 @@
+# Build output
+target/
+
+# Packages, deltas and installers are built, never committed
+*.xpkg
+*.xpkgd
+
+# Signing keys must never enter version control. The release key's public
+# half, in keys/, is the one exception: it is meant to be seen.
+*.key
+*.pem
+signing.json
+xpack-signing*.json
+
+# Claude Code local configuration
+.claude/
+CLAUDE.md
+
+# IDE / editor configuration
+.idea/
+.vscode/
+*.iml
+
+# OS noise
+.DS_Store
+Thumbs.db

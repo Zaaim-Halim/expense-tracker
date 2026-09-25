@@ -1,22 +1,192 @@
-# Expense Tracker — releases and updates
+# Expense Tracker
 
-This repository publishes **Expense Tracker**, the reference application xPack
-is validated against. Its source is in the xPack repository, under
-[`examples/expense-tracker`](https://github.com/Zaaim-Halim/xPack/tree/main/examples/expense-tracker).
+A small, modern desktop application for keeping track of what you spend, built
+with JavaFX and SQLite — and the **reference application xPack is validated
+against**.
 
-Nothing here is built by hand:
+It is two things at once:
 
-- **Releases** hold each version: the signed package (`.xpkg`), deltas from
-  earlier versions (`.xpkgd`) and the installer.
-- **GitHub Pages** (the `gh-pages` branch) serves the update index installed
-  copies read:
-  `https://zaaim-halim.github.io/expense-tracker-releases/updates/<platform>/stable.json`
+1. **A real application.** Record expenses, file them under categories, and
+   see where the month's money went on a dashboard.
+2. **A living integration test for xPack.** It is packaged, installed,
+   launched, updated, rolled back and uninstalled with xPack, and every one of
+   those steps is checked by a script against a result the application makes
+   observable.
 
-An installed copy checks that index, downloads the new version (a delta when it
-can), verifies it against the key it pinned when it was installed, and
-switches to it on its next start. Packages are signed with a key that never
-leaves the publisher's machine.
+The goal is not to show that Expense Tracker works with xPack. It is to show
+that **xPack itself works** when it packages and maintains a real desktop
+application. Why it exists, what it proves so far and what comes next are in
+[BACKLOG.md](BACKLOG.md).
 
-To install: download `Install-Expense-Tracker-…` for your platform from the
-latest release. Builds are not code-signed yet, so macOS quarantines a browser
+## What it does (1.0.0)
+
+- **Dashboard:** this month's total, how many expenses, the top category,
+  spending by category and the latest expenses.
+- **Expenses:** add, edit and delete; sortable by date, description, category
+  or amount; double-click or Enter to edit, Delete to remove.
+- **Categories:** eight to start with; add your own, rename, recolour; a
+  category still holding expenses cannot be deleted, so no expense is ever lost
+  with it.
+- **Your data stays yours:** everything is in one SQLite file outside the
+  installation, so updating or uninstalling the application never touches it.
+
+Amounts are stored in whole cents, never as floating-point numbers, so totals
+are exact.
+
+## Where the data lives
+
+| Platform | Default |
+| --- | --- |
+| macOS | `~/Library/Application Support/Expense Tracker/expenses.db` |
+| Windows | `%APPDATA%\Expense Tracker\expenses.db` |
+| Linux | `$XDG_DATA_HOME/expense-tracker/expenses.db`, or `~/.local/share/expense-tracker/` |
+
+`--data-dir=DIR` keeps it somewhere else.
+
+## Command line
+
+```text
+expense-tracker [--data-dir=DIR] [COMMAND]
+
+With no command, opens the application.
+
+  --version                         print the version and exit
+  --status                          print where the data is and what it holds
+  --add DESCRIPTION AMOUNT CATEGORY add an expense dated today
+  --help                            show this help
+```
+
+The commands never start the graphical toolkit, so they work with no display.
+That is how the validation scripts drive the installed application. `--status`
+prints one `key=value` per line:
+
+```text
+version=1.0.0
+java.version=21.0.8
+java.home=…/io.xpack.examples.expensetracker/versions/1.0.0/runtime
+data.dir=…
+database=…/expenses.db
+schema=1
+xpack.application.dir=…/io.xpack.examples.expensetracker
+expenses=2
+total=15.90
+```
+
+## Installing
+
+Download `Install-Expense-Tracker-…` for your platform from the
+[latest release](https://github.com/Zaaim-Halim/expense-tracker/releases/latest)
+and run it. Builds are not code-signed yet, so macOS quarantines a browser
 download and Windows SmartScreen flags it.
+
+Once installed, the application keeps itself up to date: it checks for a new
+version when it starts and every 15 minutes while it runs, downloads it (a
+small delta when it can), verifies it against the key it trusted at install
+time, and switches to it on its next start.
+
+## Releases and updates
+
+Every release is built by CI, never by hand. Pushing a tag `vX.Y.Z` that
+matches the version in `pom.xml` runs `.github/workflows/release.yml`, which
+builds on each platform's own machine with one Maven command,
+`mvn deploy -Prelease`, and publishes:
+
+- **a GitHub Release** holding each platform's signed package (`.xpkg`),
+  deltas from the last three versions (`.xpkgd`) and installer;
+- **the update index** on this repository's GitHub Pages, which installed
+  copies read:
+  `https://zaaim-halim.github.io/expense-tracker/updates/<platform>/stable.json`
+
+The release key signs packages in CI only; its public half is in `keys/`.
+
+## Building and running
+
+Needs a JDK 21 with `jlink`, Maven, and xPack. `scripts/setup-xpack.sh`
+installs the xPack release pinned in `pom.xml` (`xpack.release`): its binaries
+from xPack's GitHub release, checked against their checksums, and its Maven
+plugin, built from xPack's source at the same tag. CI runs the same script.
+
+```sh
+# Once per machine: xPack, and a signing key for local builds.
+scripts/setup-xpack.sh
+~/.xpack/sdk/0.4.1/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
+
+# The signed package in target/xpack/dist.
+mvn package
+
+# ... and the installer a user runs, beside it.
+mvn package -Pinstaller
+
+# Build, install into target/xpack/run and start it, in one go.
+mvn package io.xpack:xpack-maven-plugin:0.1.0-SNAPSHOT:run
+```
+
+A local build is signed with the local key, so a copy installed from it only
+accepts updates signed by that key, not the releases. Install from a release
+to follow the releases.
+
+JavaFX is on the class path rather than the module path, which keeps it working
+with no change to the Maven plugin. JavaFX notes this on start with an
+"Unsupported JavaFX configuration" line; it is expected and harmless.
+
+## Validating xPack
+
+```sh
+validation/validate-install.sh
+```
+
+Builds the application with the Maven plugin, installs it with its own
+installer in a scratch directory with its own `HOME` and key, and checks, one
+line each:
+
+- the plugin builds a signed package and an installer, and the package verifies
+- the installer installs silently, and the launcher is in place
+- the application starts through the launcher, and its arguments reach it
+- it runs on the bundled Java, not the machine's
+- xPack tells it where it is installed
+- the user's data is written outside the installation
+- the version reports its own start, so xPack records it as healthy
+- the uninstaller removes the application and its desktop entry
+- the user's data survives the uninstall
+
+Nothing outside the scratch directory is touched; `KEEP=1` keeps it for
+inspection.
+
+## Reviewing the look
+
+```sh
+java -cp "target/classes:$(cat target/cp.txt)" com.example.expensetracker.Main --render=/tmp/screens
+```
+
+Draws every screen, with sample data in a throwaway database, into PNG files:
+the three pages, their empty states and the dialogs. The class path file comes
+from `mvn dependency:build-classpath -Dmdep.outputFile=target/cp.txt
+-Dmdep.includeScope=runtime`.
+
+## Layout
+
+```text
+src/main/java/com/example/expensetracker/
+  Main.java                 entry point; command line or window
+  Options.java, Cli.java    the command line
+  AppPaths.java             where the data lives
+  HealthReport.java         tells xPack the version started
+  ExpenseTrackerApp.java    the window
+  model/                    Expense, Category, CategoryTotal
+  repository/               SQLite: schema, versioned migrations, queries
+  service/                  the rules, money, monthly summaries
+  controller/               pages, dialogs, icons, the screen renderer
+src/main/resources/
+  fxml/                     the window and its pages
+  css/app.css               the look
+  icons/                    the icon for the window and the sidebar
+src/assembly/               zips the macOS installer (an .app folder) for upload
+src/xpack/
+  art/icon.svg              the icon's source
+  icons/<platform>/         the icon in each desktop's format, chosen by a
+                            Maven profile and packaged as the desktop icon
+scripts/setup-xpack.sh      installs the pinned xPack
+validation/                 scripts that validate xPack with this application
+```
+
+Icons are from Google's Material Icons, Apache License 2.0.

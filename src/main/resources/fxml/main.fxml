@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.example.expensetracker.controller.MainController"
+            styleClass="app">
+  <left>
+    <VBox styleClass="sidebar" spacing="4">
+      <HBox styleClass="brand" spacing="10" alignment="CENTER_LEFT">
+        <Label fx:id="brandIcon" styleClass="brand-mark"/>
+        <Label text="Expense Tracker" styleClass="brand-name"/>
+      </HBox>
+      <Label text="MENU" styleClass="nav-heading"/>
+      <ToggleButton fx:id="dashboardNav" text="Dashboard" styleClass="nav-item" maxWidth="Infinity"/>
+      <ToggleButton fx:id="expensesNav" text="Expenses" styleClass="nav-item" maxWidth="Infinity"/>
+      <ToggleButton fx:id="categoriesNav" text="Categories" styleClass="nav-item" maxWidth="Infinity"/>
+      <Region VBox.vgrow="ALWAYS"/>
+      <VBox styleClass="sidebar-footer" spacing="2">
+        <Label text="Packaged with xPack" styleClass="footer-title"/>
+        <Label fx:id="versionLabel" styleClass="footer-version"/>
+      </VBox>
+    </VBox>
+  </left>
+  <center>
+    <StackPane fx:id="content" styleClass="content"/>
+  </center>
+</BorderPane>
