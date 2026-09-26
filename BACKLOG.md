@@ -45,7 +45,10 @@ What has been proven, by which check. `validate-install.sh` is
 | Delta update | ✅ | 1.0.0 → 1.0.1 from CI: 157 696 bytes downloaded instead of 51 MB, 127 of 128 files reused, signature verified |
 | Restart onto the new version | ✅ | 1.0.1 started, reported healthy and was committed; 1.0.0 kept for rollback |
 | Data preserved across updates | ✅ | 1.0.1: the same expenses and total as before |
-| Multiple sequential updates | ☐ | step 2 |
+| Multiple sequential updates | ✅ | one installation: 1.1.1 → 1.1.2 → 1.3.0, each through the update notice |
+| An update that skips versions | ✅ | 1.1.2 → 1.3.0 directly (no 1.2.0): a 250 KB delta built from 1.1.2, 127 of 128 files reused |
+| Database migration through an update | ☐ | not yet on a real installation: the owner's data reached schema 2 before 1.2.0 was installed; the migration and rollback to 1.1.2 are proven with 1.1.2 built from its tag, on copies |
+| Automatic backup after an update | ✅ | 1.3.0's first start made the day's backup in the background, after reporting its start |
 | Settings survive an update | ✅ | 1.1.1 → 1.1.2: the accent, date format and first day of the week chosen in 1.1.x were all still set |
 | "New version ready" notice | ✅ | 1.1.1 → 1.1.2 with xPack 0.4.2: the notice appeared, the user chose to restart, and the app came back on 1.1.2, healthy |
 | Update while the application runs | ✅ | 1.0.1 was found and staged by the running copy's periodic check |
