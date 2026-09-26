@@ -48,6 +48,8 @@ What has been proven, by which check. `validate-install.sh` is
 | Multiple sequential updates | ✅ | one installation: 1.1.1 → 1.1.2 → 1.3.0, each through the update notice |
 | An update that skips versions | ✅ | 1.1.2 → 1.3.0 directly (no 1.2.0): a 250 KB delta built from 1.1.2, 127 of 128 files reused |
 | Database migration through an update | ✅ | 1.3.0 → 2.0.0 on the owner's installation: a delta (127 of 128 files reused), the notice, a restart, and the data moved from schema 2 to 3 on 2.0.0's first start, with `expenses.db.schema-2.bak` written at that moment; 2.0.0 reported healthy |
+| A second migration through an update | ✅ | 2.0.0 → 2.1.0 on the owner's installation: a 335 KB delta staged by the running copy, applied through the notice; schema 3 → 4 on the first start with `expenses.db.schema-3.bak` written then; 2.1.0 reported healthy. The base currency came from Java's locale (en_US → USD), not the macOS region, so it has to be set by hand |
+| Three updates in a row, each migrating | ✅ | 2.1.0 → 2.2.0 the same way, twenty minutes later: staged by the running copy at 17:40, applied through the notice, schema 4 → 5 with `expenses.db.schema-4.bak`, reported healthy |
 | Going back after a migration | ✅ | on a copy of the owner's data, with timestamps kept: 1.3.0 built from its tag refuses 2.0.0's data, restores `schema-2.bak` (the newest backup it can read) and keeps the 2.0.0 data aside; 2.0.0 then migrates it again. The same for 1.1.2 against 1.2.0's data |
 | Automatic backup after an update | ✅ | 1.3.0's first start made the day's backup in the background, after reporting its start |
 | Settings survive an update | ✅ | 1.1.1 → 1.1.2: the accent, date format and first day of the week chosen in 1.1.x were all still set |
