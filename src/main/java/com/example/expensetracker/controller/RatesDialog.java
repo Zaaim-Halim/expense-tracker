@@ -2,12 +2,15 @@ package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.CurrencyUnit;
 import com.example.expensetracker.model.ExchangeRate;
+import com.example.expensetracker.service.EcbRates;
 import com.example.expensetracker.service.ExchangeRateApi;
+import com.example.expensetracker.service.LiveRates;
 import com.example.expensetracker.service.LedgerService;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -17,8 +20,12 @@ import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
@@ -134,13 +141,184 @@ public final class RatesDialog {
         in.valueProperty().addListener((observable, before, now) -> fill.run());
         fill.run();
 
-        VBox content = new VBox(12, picker, when, through, grid, credit);
+        // Today's rates as the feeds publish them, for every currency they
+        // have: to look at, never saved.
+        Label onlineTitle = new Label("Today's rates online");
+        onlineTitle.getStyleClass().add("card-title");
+        Label onlineStatus = new Label();
+        onlineStatus.getStyleClass().add("field-hint");
+        onlineStatus.setWrapText(true);
+        onlineStatus.setMinHeight(Region.USE_PREF_SIZE);
+        TextField find = new TextField();
+        find.setPromptText("Find a currency, e.g. JPY or yen");
+        Button lookUp = new Button("Look them up");
+        lookUp.setGraphic(Icons.of(Icons.SYNC));
+        lookUp.getStyleClass().add("secondary");
+        VBox onlineRows = new VBox();
+        ScrollPane onlineList = new ScrollPane(onlineRows);
+        onlineList.setFitToWidth(true);
+        onlineList.setPrefViewportHeight(260);
+        onlineList.getStyleClass().add("online-rates");
+        Runnable showOnline = () -> {
+            Fetched fetched = fetched();
+            boolean have = fetched != null && (fetched.ecb() != null || fetched.other() != null);
+            find.setVisible(have);
+            find.setManaged(have);
+            onlineList.setVisible(have);
+            onlineList.setManaged(have);
+            boolean fromApi = have && fetched.other() != null;
+            credit.setVisible(credit.isVisible() || fromApi);
+            credit.setManaged(credit.isVisible());
+            if (!have) {
+                return;
+            }
+            String code = in.getValue() == null ? base : in.getValue().code();
+            String wanted = find.getText() == null ? "" : find.getText().strip().toLowerCase(java.util.Locale.ROOT);
+            List<LiveRates.Rate> rates = LiveRates.against(code, fetched.ecb(), fetched.other());
+            onlineRows.getChildren().clear();
+            for (LiveRates.Rate rate : rates) {
+                String name = CurrencyUnit.iso(rate.code()).map(CurrencyUnit::name).orElse("");
+                if (!wanted.isEmpty() && !rate.code().toLowerCase(java.util.Locale.ROOT).contains(wanted)
+                        && !name.toLowerCase(java.util.Locale.ROOT).contains(wanted)) {
+                    continue;
+                }
+                Label unit = new Label("1 " + rate.code());
+                unit.getStyleClass().add("row-title");
+                unit.setMinWidth(64);
+                Label named = new Label(name);
+                named.getStyleClass().add("row-subtitle");
+                named.setMaxWidth(Double.MAX_VALUE);
+                HBox.setHgrow(named, Priority.ALWAYS);
+                Label worth = new Label("= " + rate.rate().toPlainString() + " " + code);
+                worth.getStyleClass().add("row-amount");
+                worth.setMinWidth(Region.USE_PREF_SIZE);
+                Label from = new Label(rate.source() == ExchangeRate.Source.ECB ? "ECB" : "ExchangeRate-API");
+                from.getStyleClass().add("row-subtitle");
+                // A column of its own, so the rates line up whichever feed each is from.
+                from.setMinWidth(SOURCE_COLUMN);
+                from.setPrefWidth(SOURCE_COLUMN);
+                HBox row = new HBox(12, unit, named, worth, from);
+                row.setAlignment(Pos.CENTER_LEFT);
+                row.getStyleClass().add("online-rate-row");
+                onlineRows.getChildren().add(row);
+            }
+            if (onlineRows.getChildren().isEmpty()) {
+                Label none = new Label(rates.isEmpty() ? "The feeds do not publish " + code + "." : "No currency matches.");
+                none.getStyleClass().add("row-subtitle");
+                onlineRows.getChildren().add(none);
+            }
+            LocalDate ecbDay = fetched.ecb() == null ? null : fetched.ecb().day();
+            LocalDate otherDay = fetched.other() == null ? null : fetched.other().day();
+            onlineStatus.setText(rates.size() + " currencies, in " + code + ". "
+                    + (ecbDay == null ? "" : "European Central Bank, " + Ui.date(ecbDay) + (otherDay == null ? "." : "; "))
+                    + (otherDay == null ? "" : "ExchangeRate-API, " + Ui.date(otherDay) + ".")
+                    + (fetched.problem() == null ? "" : " " + fetched.problem())
+                    + " Only shown: the rates your transactions use are the ones saved under Currencies.");
+        };
+        Runnable load = () -> {
+            lookUp.setDisable(true);
+            onlineStatus.setText("Looking up today's rates…");
+            Thread thread = new Thread(() -> {
+                Fetched fetched = download();
+                Platform.runLater(() -> {
+                    remember(fetched);
+                    lookUp.setDisable(false);
+                    lookUp.setVisible(false);
+                    lookUp.setManaged(false);
+                    if (fetched.ecb() == null && fetched.other() == null) {
+                        lookUp.setVisible(true);
+                        lookUp.setManaged(true);
+                        onlineStatus.setText("Could not look them up: " + fetched.problem());
+                    } else {
+                        showOnline.run();
+                    }
+                    if (dialog.getDialogPane().getScene() != null) {
+                        dialog.getDialogPane().getScene().getWindow().sizeToScene();
+                    }
+                });
+            }, "rates-online");
+            thread.setDaemon(true);
+            thread.start();
+        };
+        lookUp.setOnAction(event -> load.run());
+        // After the top part's listener: it decides the credit first, and the
+        // online part may only add to it.
+        in.valueProperty().addListener((observable, before, now) -> showOnline.run());
+        find.textProperty().addListener((observable, before, now) -> showOnline.run());
+        if (fetched() != null) {
+            lookUp.setVisible(false);
+            lookUp.setManaged(false);
+            showOnline.run();
+        } else if (Appearance.settings().onlineRates()) {
+            // Looking online is on: the rates are fetched as the popup opens.
+            lookUp.setVisible(false);
+            lookUp.setManaged(false);
+            showOnline.run();
+            load.run();
+        } else {
+            showOnline.run();
+            onlineStatus.setText("Every currency the European Central Bank and ExchangeRate-API publish today. "
+                    + "Looking online is off in Settings, so nothing is fetched until you ask.");
+        }
+        VBox online = new VBox(8, onlineTitle, onlineStatus, lookUp, find, onlineList);
+        online.getStyleClass().add("online-section");
+
+        // Once, at the end, for whichever part shows ExchangeRate-API's rates.
+        VBox content = new VBox(12, picker, when, through, grid, online, credit);
         content.getStyleClass().add("form");
         dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().setPrefWidth(600);
+        dialog.getDialogPane().setPrefWidth(660);
         dialog.getButtonTypes().setAll(ButtonType.CLOSE);
         Ui.icons(dialog);
         return dialog;
+    }
+
+    /**
+     * Today's feeds, as last downloaded, and why one could not be had.
+     *
+     * @param ecb     the European Central Bank's, or null
+     * @param other   ExchangeRate-API's, or null
+     * @param problem what went wrong with either, or null
+     * @param at      when they were downloaded
+     */
+    record Fetched(EcbRates.Feed ecb, EcbRates.Feed other, String problem, java.time.Instant at) {
+    }
+
+    /** The width of the feed's name beside each rate online. */
+    private static final double SOURCE_COLUMN = 130;
+
+    /** How long a download is shown again rather than repeated: the feeds change once a day. */
+    private static final java.time.Duration FRESH = java.time.Duration.ofMinutes(30);
+    private static Fetched last;
+
+    /** The last download, while it is fresh. */
+    private static Fetched fetched() {
+        return last != null && last.at().plus(FRESH).isAfter(java.time.Instant.now()) ? last : null;
+    }
+
+    static void remember(Fetched fetched) {
+        if (fetched.ecb() != null || fetched.other() != null) {
+            last = fetched;
+        }
+    }
+
+    /** Downloads both feeds; one that fails leaves the other. Off the window's thread. */
+    private static Fetched download() {
+        EcbRates.Feed ecb = null;
+        EcbRates.Feed other = null;
+        List<String> problems = new java.util.ArrayList<>();
+        try {
+            ecb = EcbRates.parse(EcbRates.download(EcbRates.FEED));
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            problems.add("the European Central Bank's: " + e.getMessage());
+        }
+        try {
+            other = ExchangeRateApi.fetch();
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            problems.add("ExchangeRate-API's: " + e.getMessage());
+        }
+        return new Fetched(ecb, other, problems.isEmpty() ? null : "Not had: " + String.join("; ", problems) + ".",
+                java.time.Instant.now());
     }
 
     /** Where a rate came from and the day it applies from: "European Central Bank, Sep 26, 2026". */

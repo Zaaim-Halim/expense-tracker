@@ -174,6 +174,20 @@ public final class Render {
             dialog(RateDialog.create(stage, service, service.rates().stream()
                     .filter(r -> r.currency().equals("USD")).findFirst().orElseThrow()),
                     directory.resolve("dialog-edit-rate.png"));
+            // Today's feeds, fixed, as if just downloaded.
+            java.util.Map<String, java.math.BigDecimal> perEuro = new java.util.HashMap<>();
+            String[][] ecbRates = {{"EUR", "1"}, {"USD", "1.1403"}, {"GBP", "0.8435"}, {"JPY", "171.52"},
+                {"CHF", "0.9362"}, {"CAD", "1.5821"}, {"AUD", "1.7493"}, {"SEK", "10.912"}, {"NOK", "11.574"},
+                {"PLN", "4.2615"}, {"CZK", "24.378"}, {"TRY", "47.321"}};
+            for (String[] rate : ecbRates) {
+                perEuro.put(rate[0], new java.math.BigDecimal(rate[1]));
+            }
+            java.util.Map<String, java.math.BigDecimal> wider = new java.util.HashMap<>(perEuro);
+            wider.put("ALL", new java.math.BigDecimal("97.21"));
+            wider.put("MAD", new java.math.BigDecimal("10.61"));
+            RatesDialog.remember(new RatesDialog.Fetched(new com.example.expensetracker.service.EcbRates.Feed(
+                    LocalDate.now().minusDays(1), perEuro), new com.example.expensetracker.service.EcbRates.Feed(
+                    LocalDate.now(), wider), null, java.time.Instant.now()));
             dialog(RatesDialog.create(stage, service, null), directory.resolve("dialog-current-rates.png"));
             dialog(RatesDialog.create(stage, service, "USD"), directory.resolve("dialog-rates-in-usd.png"));
             dialog(GoalDialog.create(stage, service, null), directory.resolve("dialog-new-goal.png"));

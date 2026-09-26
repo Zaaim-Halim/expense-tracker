@@ -52,7 +52,9 @@ application. Why it exists, what it proves so far and what comes next are in
   does not publish, such as the Albanian lek. Each rate says where it came
   from, and a rate you entered is never replaced by a fetched one. Today's
   rates can be seen at a glance, from Settings, Currencies or a transaction,
-  in the base currency or any other, each with its source and its day; and
+  in the base currency or any other, each with its source and its day, and
+  beside them today's rates for every currency the two feeds publish, to
+  look at and search, fetched only when looking online is on or you ask; and
   entering a rate or a transaction in another currency suggests one, which
   you can take or ignore.
 - **Budgets:** a limit on all spending or on one category, per week, month,

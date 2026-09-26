@@ -18,6 +18,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 import javafx.util.converter.LocalDateStringConverter;
@@ -95,6 +96,15 @@ public final class RateDialog {
         Label suggestion = new Label();
         suggestion.getStyleClass().add("field-hint");
         suggestion.setWrapText(true);
+        // As tall as its text needs: a longer suggestion, such as one looked
+        // up online, takes more lines rather than being cut, and the window
+        // grows with it so the buttons keep their margin.
+        suggestion.setMinHeight(Region.USE_PREF_SIZE);
+        suggestion.textProperty().addListener((observable, before, now) -> Platform.runLater(() -> {
+            if (dialog.getDialogPane().getScene() != null) {
+                dialog.getDialogPane().getScene().getWindow().sizeToScene();
+            }
+        }));
         Button use = new Button("Use it");
         use.setGraphic(Icons.of(Icons.CHECK));
         use.getStyleClass().add("link");

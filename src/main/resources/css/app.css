@@ -1716,3 +1716,20 @@
     -fx-font-size: 11px;
     -fx-text-fill: -muted;
 }
+
+.online-section {
+    -fx-padding: 14 0 0 0;
+    -fx-border-color: -border transparent transparent transparent;
+}
+
+.online-rates,
+.online-rates > .viewport {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.online-rate-row {
+    -fx-padding: 7 4 7 0;
+    -fx-border-color: transparent transparent -track transparent;
+}
