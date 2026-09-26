@@ -104,7 +104,7 @@ public final class LedgerService {
                 && transaction.conversion() != null) {
             copy = new Transaction(0, copy.type(), copy.account(), copy.amountCents(), copy.toAccount(),
                     copy.toAmountCents(), copy.category(), copy.merchant(), copy.description(), copy.date(),
-                    copy.note(), copy.tags(), transaction.conversion());
+                    copy.note(), copy.tags(), transaction.conversion(), copy.original());
         }
         return save(copy);
     }
@@ -215,13 +215,42 @@ public final class LedgerService {
             category = t.category();
         }
         return new Transaction(t.id(), t.type(), t.account(), t.amountCents(), to, toAmount, category,
-                merchant, description, t.date(), note, t.tags(), conversion(t, currency));
+                merchant, description, t.date(), note, t.tags(), conversion(t, currency), original(t));
+    }
+
+    /**
+     * The price in another currency, when there is one. In the account's own
+     * currency it is the amount itself, so it is not kept twice. A transfer
+     * already records both of its ends.
+     */
+    private Transaction.Original original(Transaction t) throws SQLException {
+        Transaction.Original original = t.original();
+        if (original == null || original.currency() == null
+                || original.currency().equals(t.account().currency())) {
+            return null;
+        }
+        if (t.type() == Transaction.Type.TRANSFER) {
+            throw new IllegalArgumentException("A transfer records what left and what arrived; "
+                    + "it has no price in another currency");
+        }
+        CurrencyUnit priced = currency(original.currency());
+        if (original.amountCents() <= 0) {
+            throw new IllegalArgumentException("The price must be more than zero");
+        }
+        if (original.amountCents() > largest(priced)) {
+            throw new IllegalArgumentException("That price is too large");
+        }
+        return new Transaction.Original(priced.code(), original.amountCents());
     }
 
     /**
      * What a transaction is in the base currency. In the base currency, the
      * amount itself; otherwise at the rate given with it (typed by the user),
      * or else the rate in effect on its day.
+     *
+     * <p>Always from what the account was charged, even when the original
+     * price was in the base currency: one rule, so the rate and the base
+     * amount stored beside it always agree.
      */
     private Transaction.Conversion conversion(Transaction t, CurrencyUnit currency) throws SQLException {
         CurrencyUnit base = baseCurrency();
@@ -492,7 +521,8 @@ public final class LedgerService {
         }
         Optional<CurrencyUnit> existing = currencies.customCurrencies().stream()
                 .filter(c -> c.code().equals(code)).findFirst();
-        if (existing.isPresent() && existing.get().digits() != currency.digits() && currencies.accountsIn(code) > 0) {
+        if (existing.isPresent() && existing.get().digits() != currency.digits()
+                && (currencies.accountsIn(code) > 0 || transactions.originalsIn(code) > 0)) {
             throw new IllegalArgumentException(code + " is in use, so it keeps " + existing.get().digits() + " decimals");
         }
         CurrencyUnit valid = new CurrencyUnit(code, name, currency.digits(), true);
@@ -500,12 +530,17 @@ public final class LedgerService {
         return valid;
     }
 
-    /** Removes a currency of the user's own that no account is in. */
+    /** Removes a currency of the user's own that no account or price is in. */
     public void deleteCustomCurrency(CurrencyUnit currency) throws SQLException {
         int used = currencies.accountsIn(currency.code());
         if (used > 0) {
             throw new IllegalArgumentException(currency.code() + " is the currency of " + used
                     + (used == 1 ? " account" : " accounts"));
+        }
+        int priced = transactions.originalsIn(currency.code());
+        if (priced > 0) {
+            throw new IllegalArgumentException(priced + (priced == 1 ? " transaction has its price" : " transactions have "
+                    + "their price") + " in " + currency.code());
         }
         currencies.deleteCustom(currency.code());
     }

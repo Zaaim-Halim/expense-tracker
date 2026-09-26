@@ -254,4 +254,74 @@ class CurrencyTest {
         assertThrows(IllegalArgumentException.class, () -> rate("USD", SEP_1, "0"));
         assertThrows(IllegalArgumentException.class, () -> rate("USD", SEP_1, "-1"));
     }
+
+    private Transaction priced(Account account, long charged, String currency, long price, Transaction.Type type)
+            throws SQLException {
+        return new Transaction(0, type, account, charged, null, 0,
+                service.categoryNamed(type == Transaction.Type.INCOME ? "Salary" : "Food"), "", "Priced", SEP_15,
+                "", List.of(), null, new Transaction.Original(currency, price));
+    }
+
+    @Test
+    void a_price_in_another_currency_is_kept_beside_what_the_account_was_charged() throws SQLException {
+        Transaction saved = service.save(priced(euros, 4_470, "USD", 4_850, Transaction.Type.EXPENSE));
+        assertEquals(new Transaction.Original("USD", 4_850), saved.original());
+        Transaction read = service.allTransactions().get(0);
+        assertEquals(new Transaction.Original("USD", 4_850), read.original());
+        assertEquals(4_470, read.amountCents());
+        assertEquals(4_470, read.baseAmountCents(), "the euro account's charge, not the dollar price");
+        assertEquals(-4_470, service.balances().get(euros.id()), "balances use what was charged");
+        assertEquals(4_470, service.summary(YearMonth.of(2026, 9)).totalCents(), "and so do totals");
+        assertEquals(4_470, service.netWorth(SEP_15).oweCents());
+    }
+
+    @Test
+    void a_price_in_the_accounts_own_currency_is_not_kept_twice() throws SQLException {
+        assertEquals(null, service.save(priced(euros, 1_000, "EUR", 1_000, Transaction.Type.EXPENSE)).original());
+    }
+
+    @Test
+    void a_price_in_the_base_currency_on_a_foreign_account_is_still_converted_from_the_charge() throws SQLException {
+        // 40.00 euro paid with the dollar card, charged 43.50 dollars: the
+        // base amount comes from the charge at the day's rate, one rule for all.
+        rate("USD", SEP_1, "0.92");
+        Transaction saved = service.save(priced(dollars, 4_350, "EUR", 4_000, Transaction.Type.EXPENSE));
+        assertEquals(4_002, saved.baseAmountCents(), "43.50 at 0.92 = 40.02");
+        assertEquals(new Transaction.Original("EUR", 4_000), saved.original());
+    }
+
+    @Test
+    void a_transfer_or_a_bad_price_is_refused() throws SQLException {
+        Transaction transfer = new Transaction(0, Transaction.Type.TRANSFER, euros, 1_000, dollars, 1_080, null, "",
+                "Move", SEP_15, "", List.of(), null, new Transaction.Original("GBP", 900));
+        assertThrows(IllegalArgumentException.class, () -> service.save(transfer));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.save(priced(euros, 1_000, "USD", 0, Transaction.Type.EXPENSE)));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.save(priced(euros, 1_000, "ZZZ", 100, Transaction.Type.EXPENSE)));
+        assertEquals(0, service.transactionCount());
+    }
+
+    @Test
+    void a_custom_currency_a_price_is_in_is_kept_with_its_decimals() throws SQLException {
+        CurrencyUnit points = service.saveCustomCurrency(new CurrencyUnit("PTS", "Air miles", 0, true));
+        service.save(priced(euros, 1_200, "PTS", 1_500, Transaction.Type.EXPENSE));
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> service.deleteCustomCurrency(points));
+        assertTrue(refused.getMessage().contains("price"), refused.getMessage());
+        assertThrows(IllegalArgumentException.class,
+                () -> service.saveCustomCurrency(new CurrencyUnit("PTS", "Air miles", 2, true)),
+                "1500 miles must not become 15.00");
+    }
+
+    @Test
+    void editing_keeps_or_drops_the_price_and_duplicating_keeps_it() throws SQLException {
+        Transaction saved = service.save(priced(euros, 4_470, "USD", 4_850, Transaction.Type.EXPENSE));
+        Transaction copy = service.duplicate(saved);
+        assertEquals(saved.original(), copy.original());
+        service.save(new Transaction(saved.id(), saved.type(), saved.account(), 5_000, null, 0, saved.category(), "",
+                saved.description(), saved.date(), "", List.of(), null, null));
+        assertEquals(null, service.allTransactions().stream().filter(t -> t.id() == saved.id())
+                .findFirst().orElseThrow().original(), "an edit without a price clears it");
+    }
 }

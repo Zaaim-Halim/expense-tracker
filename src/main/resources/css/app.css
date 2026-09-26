@@ -901,6 +901,13 @@
     -fx-text-fill: -text;
 }
 
+.amount-original,
+.amount-cell .label.amount-original {
+    -fx-text-fill: -muted;
+    -fx-font-size: 11.5px;
+    -fx-font-weight: normal;
+}
+
 .amount-transfer {
     -fx-text-fill: -text-2;
 }

@@ -28,6 +28,10 @@ import javafx.util.converter.LocalDateStringConverter;
  */
 public final class CurrenciesController implements Page {
 
+    /** What the base currency is for, and when it can change: said the same wherever it is chosen. */
+    static final String BASE_HINT = "Every total, report and the net worth is in it. It can change while every "
+            + "account is in it and there are no rates; after that it stays.";
+
     @FXML private Label summaryLabel;
     @FXML private Button newRateButton;
     @FXML private Button newCurrencyButton;
@@ -36,7 +40,7 @@ public final class CurrenciesController implements Page {
     @FXML private VBox converterRows;
     @FXML private VBox customRows;
 
-    private final ComboBox<CurrencyUnit> base = new ComboBox<>();
+    private final BaseCurrencyChoice base = new BaseCurrencyChoice(this::window);
     private final TextField convertAmount = new TextField();
     private final ComboBox<CurrencyUnit> convertFrom = new ComboBox<>();
     private final ComboBox<CurrencyUnit> convertTo = new ComboBox<>();
@@ -45,8 +49,8 @@ public final class CurrenciesController implements Page {
 
     private LedgerService service;
     private Runnable dataChanged;
-    // Set while the page fills the base currency's list, so that is not taken
-    // for the user choosing another.
+    // Set while the page fills the converter's lists, so that is not taken
+    // for the user choosing.
     private boolean filling;
 
     @Override
@@ -62,16 +66,8 @@ public final class CurrenciesController implements Page {
             }
         });
 
-        base.setVisibleRowCount(12);
-        base.setPrefWidth(260);
-        base.valueProperty().addListener((observable, before, now) -> {
-            if (!filling && now != null && before != null && !now.code().equals(before.code())) {
-                changeBase(before, now);
-            }
-        });
-        baseRows.getChildren().setAll(SettingsController.row("Totals are in",
-                "Every total, report and the net worth. It can change while every account is in it "
-                        + "and there are no rates; after that it stays.", base));
+        base.setup(ledger, changed);
+        baseRows.getChildren().setAll(SettingsController.row("Totals are in", BASE_HINT, base.control()));
 
         convertAmount.setText("100");
         convertAmount.setPromptText("Amount");
@@ -113,10 +109,9 @@ public final class CurrenciesController implements Page {
         // Dates as the settings write them now, which may have changed since.
         convertOn.setConverter(new LocalDateStringConverter(Appearance.formats().dateFormatter(),
                 Appearance.formats().dateFormatter()));
+        base.refresh();
         filling = true;
         try {
-            base.getItems().setAll(all);
-            base.setValue(find(all, current.code()));
             CurrencyUnit from = convertFrom.getValue();
             CurrencyUnit to = convertTo.getValue();
             convertFrom.getItems().setAll(all);
@@ -146,22 +141,6 @@ public final class CurrenciesController implements Page {
         summaryLabel.setText("Totals in " + current.code() + " · " + rates.size()
                 + (rates.size() == 1 ? " rate" : " rates"));
         convert();
-    }
-
-    private void changeBase(CurrencyUnit before, CurrencyUnit now) {
-        try {
-            service.changeBaseCurrency(now.code());
-        } catch (IllegalArgumentException e) {
-            Ui.error(window(), "The base currency stays " + before.code(), e.getMessage());
-            filling = true;
-            base.setValue(before);
-            filling = false;
-            return;
-        } catch (SQLException e) {
-            Ui.error(window(), "The base currency could not be changed", e.getMessage());
-            return;
-        }
-        dataChanged.run();
     }
 
     private void convert() {

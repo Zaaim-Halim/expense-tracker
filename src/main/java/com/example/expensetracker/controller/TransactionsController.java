@@ -160,7 +160,16 @@ public final class TransactionsController implements Page {
             case TRANSFER -> Ui.money(t.amountCents(), t.account().currency());
         });
         amount.getStyleClass().add("amount-" + t.type().key());
-        return amount;
+        if (t.original() == null) {
+            return amount;
+        }
+        // The price as it was, under what the account was charged.
+        Label price = new Label(Ui.money(t.original().amountCents(), t.original().currency())
+                + (t.original().currency().equals(Ui.baseCurrency().code()) ? "\u00A0" + t.original().currency() : ""));
+        price.getStyleClass().add("amount-original");
+        VBox both = new VBox(1, amount, price);
+        both.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+        return both;
     }
 
     /** What sorting by amount compares: the amount in the base currency, money out below zero. */
@@ -353,6 +362,9 @@ public final class TransactionsController implements Page {
         refillChoices(accounts, categories, tags);
         amountLabel.setText("Amount in " + Ui.baseCurrency().code());
         table.setItems(FXCollections.observableArrayList(shown));
+        // Rows equal to the ones shown before are not redrawn by themselves,
+        // yet how dates and amounts are written may have changed since.
+        table.refresh();
         clearFilters.setDisable(!filter.isActive());
         if (filter.categoryId() != 0 || (filter.tag() != null && !filter.tag().isBlank()) || filter.from() != null
                 || filter.to() != null || filter.minCents() != null || filter.maxCents() != null) {

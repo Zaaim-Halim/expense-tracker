@@ -33,10 +33,31 @@ import java.util.Locale;
  *                      no two differing only in case
  * @param conversion    the amount in the base currency and the rate used;
  *                      null until it is saved, when it is worked out
+ * @param original      the price in the currency it was in, when that is not
+ *                      the account's: 48.50 USD paid with a euro card. Only a
+ *                      record; {@code amountCents}, what the account was
+ *                      charged, is what balances and totals use. Null otherwise
  */
 public record Transaction(long id, Type type, Account account, long amountCents, Account toAccount,
         long toAmountCents, Category category, String merchant, String description, LocalDate date,
-        String note, List<String> tags, Conversion conversion) {
+        String note, List<String> tags, Conversion conversion, Original original) {
+
+    /**
+     * A price in another currency than the account's.
+     *
+     * @param currency    its currency's code
+     * @param amountCents the price, in that currency's minor units
+     */
+    public record Original(String currency, long amountCents) {
+    }
+
+    /** A transaction with no original price in another currency. */
+    public Transaction(long id, Type type, Account account, long amountCents, Account toAccount,
+            long toAmountCents, Category category, String merchant, String description, LocalDate date,
+            String note, List<String> tags, Conversion conversion) {
+        this(id, type, account, amountCents, toAccount, toAmountCents, category, merchant, description, date,
+                note, tags, conversion, null);
+    }
 
     /**
      * What {@code amountCents} is in the base currency, and the rate used.
@@ -107,13 +128,13 @@ public record Transaction(long id, Type type, Account account, long amountCents,
     /** The same transaction with a database identity. */
     public Transaction withId(long newId) {
         return new Transaction(newId, type, account, amountCents, toAccount, toAmountCents, category,
-                merchant, description, date, note, tags, conversion);
+                merchant, description, date, note, tags, conversion, original);
     }
 
     /** A copy to save as a new transaction, dated {@code on}; its conversion is worked out for that day. */
     public Transaction duplicate(LocalDate on) {
         return new Transaction(0, type, account, amountCents, toAccount, toAmountCents, category,
-                merchant, description, on, note, tags);
+                merchant, description, on, note, tags, null, original);
     }
 
     /** How this transaction changes {@code target}'s balance, in cents. */

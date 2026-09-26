@@ -8,7 +8,7 @@
        application xPack is validated against. See README.md and BACKLOG.md. -->
   <groupId>io.xpack.examples</groupId>
   <artifactId>expense-tracker</artifactId>
-  <version>2.1.0</version>
+  <version>2.2.0</version>
   <name>Expense Tracker</name>
   <description>Track what you spend, by category and by month.</description>
 

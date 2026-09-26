@@ -160,7 +160,9 @@ public final class DashboardController implements Page {
 
         Label title = new Label(t.description());
         title.getStyleClass().add("row-title");
-        Label subtitle = new Label(kind + " · " + Ui.date(t.date()));
+        String price = t.original() == null ? "" : " · " + Ui.money(t.original().amountCents(), t.original().currency())
+                + (t.original().currency().equals(Ui.baseCurrency().code()) ? "\u00A0" + t.original().currency() : "");
+        Label subtitle = new Label(kind + price + " · " + Ui.date(t.date()));
         subtitle.getStyleClass().add("row-subtitle");
         VBox text = new VBox(2, title, subtitle);
         HBox.setHgrow(text, Priority.ALWAYS);

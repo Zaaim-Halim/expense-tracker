@@ -36,7 +36,7 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 4;
+    public static final int SCHEMA = 5;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
@@ -50,8 +50,13 @@ public final class Database implements AutoCloseable {
      * amount in the base currency. Schema 3's code would add transactions
      * with no converted amount, which every total then leaves out, and would
      * add amounts in different currencies together. So it may not open it.
+     *
+     * <p>Schema 5 lets a transaction keep its price in another currency than
+     * its account's. Schema 4's code, changing such a transaction's amount,
+     * would leave the old price beside it, telling the user something that is
+     * no longer true. So it may not open it either.
      */
-    public static final int COMPATIBILITY = 4;
+    public static final int COMPATIBILITY = 5;
 
     /**
      * The base currency schema 4 gives existing data: the one of the region
@@ -273,6 +278,9 @@ public final class Database implements AutoCloseable {
             }
             if (schema < 4) {
                 addCurrencies(defaultBase());
+            }
+            if (schema < 5) {
+                addOriginalPrices();
             }
             connection.commit();
         } catch (SQLException e) {
@@ -500,6 +508,20 @@ public final class Database implements AutoCloseable {
         try (Statement statement = connection.createStatement()) {
             statement.execute("UPDATE meta SET value = '4' WHERE key = 'schema'");
             statement.execute("PRAGMA user_version = 4");
+        }
+    }
+
+    /**
+     * Schema 5: a transaction's price in the currency it was in, when that is
+     * not its account's. Nothing so far has one.
+     */
+    private void addOriginalPrices() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE transactions ADD COLUMN original_currency TEXT");
+            statement.execute("ALTER TABLE transactions ADD COLUMN original_amount_cents INTEGER "
+                    + "CHECK (original_amount_cents IS NULL OR original_amount_cents > 0)");
+            statement.execute("UPDATE meta SET value = '5' WHERE key = 'schema'");
+            statement.execute("PRAGMA user_version = 5");
         }
     }
 

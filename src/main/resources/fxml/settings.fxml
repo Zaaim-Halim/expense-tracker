@@ -27,6 +27,11 @@
     </VBox>
 
     <VBox styleClass="card" spacing="4">
+      <Label text="Money" styleClass="card-title"/>
+      <VBox fx:id="moneyRows" spacing="0"/>
+    </VBox>
+
+    <VBox styleClass="card" spacing="4">
       <Label text="Data and backups" styleClass="card-title"/>
       <VBox fx:id="dataRows" spacing="0"/>
     </VBox>

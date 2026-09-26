@@ -23,6 +23,7 @@ public final class TransactionRepository {
     private static final String SELECT = """
             SELECT t.id, t.type, t.amount_cents, t.to_amount_cents, t.merchant, t.description,
                    t.occurred_on, t.note, t.rate, t.base_amount_cents,
+                   t.original_currency, t.original_amount_cents,
                    a.id AS a_id, a.name AS a_name, a.kind AS a_kind, a.currency AS a_currency,
                    a.opening_cents AS a_opening,
                    b.id AS b_id, b.name AS b_name, b.kind AS b_kind, b.currency AS b_currency,
@@ -78,8 +79,9 @@ public final class TransactionRepository {
             try (PreparedStatement insert = connection.prepareStatement("""
                     INSERT INTO transactions(type, account_id, amount_cents, to_account_id,
                                              to_amount_cents, category_id, merchant, description,
-                                             occurred_on, note, rate, base_amount_cents)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+                                             occurred_on, note, rate, base_amount_cents,
+                                             original_currency, original_amount_cents)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
                 bind(insert, transaction);
                 insert.executeUpdate();
                 try (ResultSet keys = insert.getGeneratedKeys()) {
@@ -99,10 +101,11 @@ public final class TransactionRepository {
                     UPDATE transactions
                     SET type = ?, account_id = ?, amount_cents = ?, to_account_id = ?,
                         to_amount_cents = ?, category_id = ?, merchant = ?, description = ?,
-                        occurred_on = ?, note = ?, rate = ?, base_amount_cents = ?
+                        occurred_on = ?, note = ?, rate = ?, base_amount_cents = ?,
+                        original_currency = ?, original_amount_cents = ?
                     WHERE id = ?""")) {
                 bind(update, transaction);
-                update.setLong(13, transaction.id());
+                update.setLong(15, transaction.id());
                 update.executeUpdate();
             }
             writeTags(transaction);
@@ -219,7 +222,7 @@ public final class TransactionRepository {
         for (Transaction t : transactions) {
             tagged.add(new Transaction(t.id(), t.type(), t.account(), t.amountCents(), t.toAccount(),
                     t.toAmountCents(), t.category(), t.merchant(), t.description(), t.date(), t.note(),
-                    tags.getOrDefault(t.id(), List.of()), t.conversion()));
+                    tags.getOrDefault(t.id(), List.of()), t.conversion(), t.original()));
         }
         return tagged;
     }
@@ -245,6 +248,13 @@ public final class TransactionRepository {
                 ? new Transaction.Conversion(BigDecimal.ONE, t.amountCents()) : t.conversion();
         statement.setString(11, conversion.rate().stripTrailingZeros().toPlainString());
         statement.setLong(12, conversion.baseAmountCents());
+        if (t.original() == null) {
+            statement.setNull(13, Types.VARCHAR);
+            statement.setNull(14, Types.INTEGER);
+        } else {
+            statement.setString(13, t.original().currency());
+            statement.setLong(14, t.original().amountCents());
+        }
     }
 
     private static List<Transaction> readAll(ResultSet rows) throws SQLException {
@@ -265,9 +275,27 @@ public final class TransactionRepository {
                     rows.getString("merchant"), rows.getString("description"),
                     LocalDate.parse(rows.getString("occurred_on")), rows.getString("note"), List.of(),
                     new Transaction.Conversion(new BigDecimal(rows.getString("rate")),
-                            rows.getLong("base_amount_cents"))));
+                            rows.getLong("base_amount_cents")), readOriginal(rows)));
         }
         return transactions;
+    }
+
+    private static Transaction.Original readOriginal(ResultSet rows) throws SQLException {
+        String currency = rows.getString("original_currency");
+        long amount = rows.getLong("original_amount_cents");
+        return currency == null || rows.wasNull() ? null : new Transaction.Original(currency, amount);
+    }
+
+    /** How many transactions carry a price in {@code code}. */
+    public int originalsIn(String code) throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT COUNT(*) FROM transactions WHERE original_currency = ?")) {
+            query.setString(1, code);
+            try (ResultSet rows = query.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
+        }
     }
 
     private interface Work<T> {

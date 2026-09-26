@@ -2,6 +2,7 @@ package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.Account;
 import com.example.expensetracker.model.Category;
+import com.example.expensetracker.model.CurrencyUnit;
 import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.service.Money;
@@ -80,9 +81,32 @@ public final class TransactionDialog {
 
         TextField description = new TextField(existing == null ? "" : existing.description());
         description.setPromptText("What was it? e.g. Groceries");
-        TextField amount = new TextField(existing == null ? ""
+        // The amount as it was priced: in the account's currency, or another
+        // one (48.50 USD paid with a euro card), with what was charged beside.
+        Transaction.Original priced = existing == null ? null : existing.original();
+        TextField amount = new TextField(existing == null ? "" : priced != null
+                ? Money.plain(priced.amountCents(), Ui.unit(priced.currency()).digits())
                 : Money.plain(existing.amountCents(), Ui.unit(existing.account().currency()).digits()));
         amount.setPromptText("0.00");
+        ComboBox<CurrencyUnit> priceCurrency = new ComboBox<>();
+        priceCurrency.setVisibleRowCount(12);
+        priceCurrency.setPrefWidth(110);
+        priceCurrency.setMinWidth(110);
+        priceCurrency.setCellFactory(list -> new CurrencyCell(true));
+        priceCurrency.setButtonCell(new CurrencyCell(false));
+        priceCurrency.getItems().setAll(currencyChoices(service, accounts));
+        TextField charged = new TextField(priced == null ? ""
+                : Money.plain(existing.amountCents(), Ui.unit(existing.account().currency()).digits()));
+        charged.setPromptText("0.00");
+        Label chargedHint = new Label();
+        chargedHint.getStyleClass().add("field-hint");
+        chargedHint.setWrapText(true);
+        boolean[] chargedTyped = {priced != null};
+        charged.textProperty().addListener((observable, before, now) -> {
+            if (charged.isFocused()) {
+                chargedTyped[0] = true;
+            }
+        });
         DatePicker date = new DatePicker(existing == null ? LocalDate.now() : existing.date());
         date.setMaxWidth(Double.MAX_VALUE);
         date.setConverter(new LocalDateStringConverter(Appearance.formats().dateFormatter(),
@@ -147,9 +171,15 @@ public final class TransactionDialog {
         VBox toField = field("To", toAccount);
         VBox categoryField = field("Category", category);
         VBox merchantField = field("Paid to", merchant);
-        VBox amountField = field("Amount", amount);
+        HBox amountInput = new HBox(8, amount, priceCurrency);
+        HBox.setHgrow(amount, Priority.ALWAYS);
+        VBox amountField = field("Amount", amountInput);
         HBox amountAndDate = pair(amountField, field("Date", date));
-        HBox conversionRow = pair(rateField, arrivedField);
+        VBox chargedField = field("Charged", new VBox(6, charged, chargedHint));
+        HBox conversionRow = new HBox(12, chargedField, rateField, arrivedField);
+        for (Node node : conversionRow.getChildren()) {
+            HBox.setHgrow(node, Priority.ALWAYS);
+        }
         HBox accountAndCategory = pair(accountField, categoryField);
         HBox fromAndTo = pair(new VBox(), toField);
 
@@ -186,23 +216,54 @@ public final class TransactionDialog {
             }
         };
         Runnable convert = () -> {
+            if (type.getSelectedToggle() == null) {
+                // Still being filled in: the type is chosen last.
+                return;
+            }
             Transaction.Type chosen = (Transaction.Type) type.getSelectedToggle().getUserData();
+            boolean transfer = chosen == Transaction.Type.TRANSFER;
             Account from = account.getValue();
             Account to = toAccount.getValue();
             String base = Ui.baseCurrency().code();
             String code = from == null ? base : from.currency();
-            ((Label) amountField.getChildren().get(0)).setText(code.equals(base) ? "Amount" : "Amount in " + code);
+            // A transfer's two ends are its currencies; it has no other price.
+            priceCurrency.setVisible(!transfer);
+            priceCurrency.setManaged(!transfer);
+            String pricedIn = transfer || priceCurrency.getValue() == null ? code : priceCurrency.getValue().code();
+            boolean elsewhere = !pricedIn.equals(code);
+            ((Label) amountField.getChildren().get(0)).setText(elsewhere ? "Price"
+                    : code.equals(base) ? "Amount" : "Amount in " + code);
             boolean foreign = !code.equals(base);
-            boolean across = chosen == Transaction.Type.TRANSFER && from != null && to != null
-                    && !to.currency().equals(from.currency());
+            boolean across = transfer && from != null && to != null && !to.currency().equals(from.currency());
+            chargedField.setVisible(elsewhere);
+            chargedField.setManaged(elsewhere);
             rateField.setVisible(foreign);
             rateField.setManaged(foreign);
             arrivedField.setVisible(across);
             arrivedField.setManaged(across);
-            conversionRow.setVisible(foreign || across);
-            conversionRow.setManaged(foreign || across);
+            conversionRow.setVisible(elsewhere || foreign || across);
+            conversionRow.setManaged(elsewhere || foreign || across);
             if (across) {
                 ((Label) arrivedField.getChildren().get(0)).setText("Arrived in " + to.currency());
+            }
+            if (elsewhere) {
+                ((Label) chargedField.getChildren().get(0)).setText("Charged in " + code);
+                chargedHint.setText("What " + (from == null ? "the account" : from.name())
+                        + " was charged, from the statement.");
+                // Worked out through the rates when there are rates to do it
+                // with; otherwise the user types it, from the statement.
+                if (!chargedTyped[0]) {
+                    try {
+                        long price = Money.parse(amount.getText(), Ui.unit(pricedIn).digits());
+                        charged.setText(Money.plain(service.convert(price, pricedIn, code, date.getValue()),
+                                Ui.unit(code).digits()));
+                        chargedHint.setText("At the rates for this day. Change it to what the statement says.");
+                    } catch (IllegalArgumentException | SQLException | NullPointerException e) {
+                        charged.setText("");
+                        chargedHint.setText("What " + (from == null ? "the account" : from.name())
+                                + " was charged, from the statement.");
+                    }
+                }
             }
             if (foreign) {
                 ((Label) rateField.getChildren().get(0)).setText("1 " + code + " in " + base);
@@ -216,7 +277,7 @@ public final class TransactionDialog {
                 }
                 String shown;
                 try {
-                    long minor = Money.parse(amount.getText(), Ui.unit(code).digits());
+                    long minor = Money.parse(elsewhere ? charged.getText() : amount.getText(), Ui.unit(code).digits());
                     long inBase = Money.convert(minor, Ui.unit(code).digits(), Money.parseRate(rate.getText()),
                             Ui.baseCurrency().digits());
                     shown = "Comes to " + Ui.money(inBase, base) + " " + base + ".";
@@ -234,15 +295,36 @@ public final class TransactionDialog {
         account.valueProperty().addListener((observable, before, now) -> {
             if (before != null && now != null && !before.currency().equals(now.currency())) {
                 rateTyped[0] = false;
+                chargedTyped[0] = false;
+                // A price in the old account's currency follows the account.
+                if (priceCurrency.getValue() == null || priceCurrency.getValue().code().equals(before.currency())) {
+                    selectCurrency(priceCurrency, now.currency());
+                }
             }
             convert.run();
         });
         date.valueProperty().addListener((observable, before, now) -> {
             rateTyped[0] = false;
+            chargedTyped[0] = false;
             convert.run();
         });
+        // Until the form is filled in, a change is the form's, not the user's:
+        // an existing transaction keeps what it was charged.
+        boolean[] ready = {false};
+        priceCurrency.valueProperty().addListener((observable, before, now) -> {
+            if (ready[0]) {
+                chargedTyped[0] = false;
+            }
+            convert.run();
+        });
+        charged.textProperty().addListener((observable, before, now) -> convert.run());
         toAccount.valueProperty().addListener((observable, before, now) -> convert.run());
-        amount.textProperty().addListener((observable, before, now) -> convert.run());
+        amount.textProperty().addListener((observable, before, now) -> {
+            if (amount.isFocused()) {
+                chargedTyped[0] = false;
+            }
+            convert.run();
+        });
         rate.textProperty().addListener((observable, before, now) -> convert.run());
         type.selectedToggleProperty().addListener((observable, before, now) -> {
             if (now == null) {
@@ -252,9 +334,12 @@ public final class TransactionDialog {
                 convert.run();
             }
         });
+        selectCurrency(priceCurrency, priced != null ? priced.currency()
+                : account.getValue() != null ? account.getValue().currency() : Ui.baseCurrency().code());
         Transaction.Type initial = existing == null ? Transaction.Type.EXPENSE : existing.type();
         type.getToggles().stream().filter(t -> t.getUserData() == initial).findFirst().ifPresent(type::selectToggle);
         convert.run();
+        ready[0] = true;
         if (existing != null && existing.category() != null) {
             category.getItems().stream().filter(c -> c.id() == existing.category().id()).findFirst()
                     .ifPresent(category::setValue);
@@ -291,9 +376,23 @@ public final class TransactionDialog {
                 if (from == null) {
                     throw new IllegalArgumentException("Choose an account");
                 }
-                long cents = Money.parse(amount.getText(), Ui.unit(from.currency()).digits());
                 Transaction.Type chosen = (Transaction.Type) type.getSelectedToggle().getUserData();
                 boolean transfer = chosen == Transaction.Type.TRANSFER;
+                String pricedIn = transfer || priceCurrency.getValue() == null ? from.currency()
+                        : priceCurrency.getValue().code();
+                Transaction.Original original = null;
+                long cents;
+                if (pricedIn.equals(from.currency())) {
+                    cents = Money.parse(amount.getText(), Ui.unit(from.currency()).digits());
+                } else {
+                    original = new Transaction.Original(pricedIn,
+                            Money.parse(amount.getText(), Ui.unit(pricedIn).digits()));
+                    if (charged.getText().isBlank()) {
+                        throw new IllegalArgumentException("Enter what " + from.name() + " was charged, in "
+                                + from.currency());
+                    }
+                    cents = Money.parse(charged.getText(), Ui.unit(from.currency()).digits());
+                }
                 Account to = transfer ? toAccount.getValue() : null;
                 long toCents = !transfer ? 0 : to != null && !to.currency().equals(from.currency())
                         ? Money.parse(arrived.getText(), Ui.unit(to.currency()).digits()) : cents;
@@ -305,7 +404,7 @@ public final class TransactionDialog {
                         from, cents, to, toCents,
                         transfer ? null : category.getValue(), transfer ? "" : merchant.getText(),
                         description.getText(), date.getValue(), note.getText(),
-                        Transaction.parseTags(tags.getText()), conversion));
+                        Transaction.parseTags(tags.getText()), conversion, original));
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);
@@ -317,6 +416,53 @@ public final class TransactionDialog {
         dialog.setResultConverter(button -> button == save ? saved[0] : null);
         Platform.runLater(description::requestFocus);
         return dialog;
+    }
+
+    /**
+     * The currencies a price can be in: the base and the accounts' own
+     * first, then the rest, so the few in use are not lost among all of
+     * ISO 4217.
+     */
+    private static List<CurrencyUnit> currencyChoices(LedgerService service, List<Account> accounts) {
+        List<CurrencyUnit> all;
+        try {
+            all = service.allCurrencies();
+        } catch (SQLException e) {
+            return List.of(Ui.baseCurrency());
+        }
+        java.util.LinkedHashSet<String> first = new java.util.LinkedHashSet<>();
+        first.add(Ui.baseCurrency().code());
+        accounts.forEach(a -> first.add(a.currency()));
+        try {
+            service.rates().forEach(r -> first.add(r.currency()));
+        } catch (SQLException e) {
+            // The rest are still offered, only not first.
+        }
+        List<CurrencyUnit> ordered = new ArrayList<>();
+        for (String code : first) {
+            all.stream().filter(c -> c.code().equals(code)).findFirst().ifPresent(ordered::add);
+        }
+        all.stream().filter(c -> !first.contains(c.code())).forEach(ordered::add);
+        return ordered;
+    }
+
+    private static void selectCurrency(ComboBox<CurrencyUnit> box, String code) {
+        box.getItems().stream().filter(c -> c.code().equals(code)).findFirst().ifPresent(box::setValue);
+    }
+
+    /** A currency: its code on the closed box, its code and name in the list. */
+    private static final class CurrencyCell extends ListCell<CurrencyUnit> {
+        private final boolean named;
+
+        CurrencyCell(boolean named) {
+            this.named = named;
+        }
+
+        @Override
+        protected void updateItem(CurrencyUnit currency, boolean empty) {
+            super.updateItem(currency, empty);
+            setText(empty || currency == null ? null : named ? currency.toString() : currency.code());
+        }
     }
 
     private static HBox pair(Node left, Node right) {

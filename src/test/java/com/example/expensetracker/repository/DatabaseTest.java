@@ -264,7 +264,7 @@ class DatabaseTest {
                 count(old, "SELECT COUNT(*) FROM transaction_tags")};
         }
         try (Database database = Database.open(file)) {
-            assertEquals(4, database.schemaVersion());
+            assertEquals(Database.SCHEMA, database.schemaVersion());
             String base = new CurrencyRepository(database).baseCode();
             List<Transaction> all = new TransactionRepository(database).findAll();
             assertEquals(before[0], all.size());
@@ -282,7 +282,7 @@ class DatabaseTest {
         }
         try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
             assertEquals(before[2], count(after, "SELECT COUNT(*) FROM transaction_tags"));
-            assertEquals(4, count(after, "PRAGMA user_version"),
+            assertEquals(Database.COMPATIBILITY, count(after, "PRAGMA user_version"),
                     "2.0.0 now refuses the file rather than adding transactions no total counts");
         }
         assertTrue(Files.exists(dir.resolve("expenses.db.schema-3.bak")), "no backup was made");
@@ -315,5 +315,60 @@ class DatabaseTest {
         } finally {
             java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, was);
         }
+    }
+
+    /** A database exactly as the released 2.1.0 wrote it: schema 4, with a dollar account, a rate and air miles. */
+    static Path schemaFourFile(Path dir) throws Exception {
+        Path file = dir.resolve("expenses.db");
+        try (java.io.InputStream in = DatabaseTest.class.getResourceAsStream("/schema-4.db")) {
+            Files.copy(in, file);
+        }
+        return file;
+    }
+
+    @Test
+    void a_schema_four_file_keeps_every_amount_rate_and_currency_and_has_no_original_prices() throws Exception {
+        Path file = schemaFourFile(dir);
+        try (Database database = Database.open(file)) {
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            CurrencyRepository currencies = new CurrencyRepository(database);
+            assertEquals("EUR", currencies.baseCode());
+            assertEquals(List.of("PTS"), currencies.customCurrencies().stream()
+                    .map(com.example.expensetracker.model.CurrencyUnit::code).toList());
+            assertEquals(1, currencies.rates().size());
+            List<Transaction> all = new TransactionRepository(database).findAll();
+            assertEquals(4, all.size());
+            assertTrue(all.stream().allMatch(t -> t.original() == null));
+            Transaction dinner = all.stream().filter(t -> t.description().equals("Dinner in Brooklyn"))
+                    .findFirst().orElseThrow();
+            assertEquals(4850, dinner.amountCents());
+            assertEquals(4462, dinner.baseAmountCents(), "the conversion stored by 2.1.0 is kept");
+            assertEquals(0, dinner.conversion().rate().compareTo(new java.math.BigDecimal("0.92")));
+            Transaction topUp = all.stream().filter(t -> t.description().equals("Top up")).findFirst().orElseThrow();
+            assertEquals(21_700, topUp.toAmountCents());
+            var balances = new AccountRepository(database).balances();
+            assertEquals(225_750L, balances.get(1L));
+            assertEquals(11_850L, balances.get(2L));
+            assertEquals(12_000L, balances.get(3L));
+            assertEquals(8712, new TransactionRepository(database).expenseCountAndTotal()[1]);
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(Database.COMPATIBILITY, count(after, "PRAGMA user_version"),
+                    "2.1.0 now refuses the file rather than leaving an old price beside a changed amount");
+        }
+        assertTrue(Files.exists(dir.resolve("expenses.db.schema-4.bak")), "no backup was made");
+    }
+
+    @Test
+    void an_upgrade_from_schema_four_that_fails_leaves_the_file_exactly_as_it_was() throws Exception {
+        // A column the upgrade adds is already there: its ALTER fails.
+        Path file = schemaFourFile(dir);
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+                Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE transactions ADD COLUMN original_amount_cents INTEGER");
+        }
+        byte[] before = Files.readAllBytes(file);
+        assertThrows(SQLException.class, () -> Database.open(file).close());
+        assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(file)), "the file was changed");
     }
 }

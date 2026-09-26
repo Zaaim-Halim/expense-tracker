@@ -127,6 +127,8 @@ public final class Render {
                     .filter(t -> t.toAccount() != null && t.toAccount().currency().equals("USD")).findFirst()
                     .orElseThrow()), directory.resolve("dialog-edit-transfer-currencies.png"));
             dialog(RateDialog.create(stage, service, null), directory.resolve("dialog-new-rate.png"));
+            dialog(TransactionDialog.create(stage, service, all.stream().filter(t -> t.original() != null)
+                    .findFirst().orElseThrow()), directory.resolve("dialog-edit-priced.png"));
             dialog(CurrencyDialog.create(stage, service), directory.resolve("dialog-new-currency.png"));
 
             // Dark, with another accent and other formats: every page again,
@@ -211,6 +213,16 @@ public final class Render {
                 Appearance.change(light.withTheme(dark ? Settings.Theme.DARK : Settings.Theme.LIGHT));
                 Dialog<?> edit = TransactionDialog.create(stage, service, sample);
                 edit.show();
+                Dialog<?> pricedEdit = TransactionDialog.create(stage, service, all.stream()
+                        .filter(t -> t.original() != null).findFirst().orElseThrow());
+                pricedEdit.show();
+                ComboBox<?> priceCurrency = (ComboBox<?>) pricedEdit.getDialogPane().lookupAll(".combo-box").stream()
+                        .filter(node -> !((ComboBox<?>) node).getItems().isEmpty()
+                                && ((ComboBox<?>) node).getItems().get(0)
+                                        instanceof com.example.expensetracker.model.CurrencyUnit)
+                        .findFirst().orElseThrow();
+                popup(priceCurrency::show, priceCurrency::hide, directory.resolve("popup-price-currency" + theme + ".png"));
+                pricedEdit.close();
                 ComboBox<?> account = (ComboBox<?>) edit.getDialogPane().lookupAll(".combo-box").stream()
                         .filter(Node::isVisible).findFirst().orElseThrow();
                 popup(account::show, account::hide, directory.resolve("popup-account" + theme + ".png"));
@@ -445,6 +457,10 @@ public final class Render {
         service.save(Transaction.expense(travel, 4_850, service.categoryNamed("Food"), "Dinner in Brooklyn",
                 today, "", List.of("travel")));
         service.saveCustomCurrency(new com.example.expensetracker.model.CurrencyUnit("PTS", "Air miles", 0, true));
+        // Paid in pounds with the euro card: the price kept beside the charge.
+        service.save(new Transaction(0, Transaction.Type.EXPENSE, card, 2_988, null, 0,
+                service.categoryNamed("Entertainment"), "National Gallery", "Exhibition in London", today, "",
+                List.of("travel"), null, new Transaction.Original("GBP", 2_500)));
     }
 
     private static void write(Scene scene, Path file) throws IOException {

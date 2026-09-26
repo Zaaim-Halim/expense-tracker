@@ -40,6 +40,10 @@ public final class SettingsController implements Page {
     @FXML private VBox formatRows;
     @FXML private GridPane shortcutGrid;
     @FXML private VBox dataRows;
+    @FXML private VBox moneyRows;
+
+    private final BaseCurrencyChoice baseCurrency = new BaseCurrencyChoice(
+            () -> moneyRows.getScene() == null ? null : moneyRows.getScene().getWindow());
 
     private final ToggleGroup automatic = new ToggleGroup();
     private final Label dataFolder = new Label();
@@ -59,6 +63,9 @@ public final class SettingsController implements Page {
 
     @Override
     public void setup(LedgerService service, Runnable dataChanged) {
+        baseCurrency.setup(service, dataChanged);
+        moneyRows.getChildren().setAll(row("Base currency", CurrenciesController.BASE_HINT
+                + " Rates and other currencies are under Currencies.", baseCurrency.control()));
         HBox themes = new HBox();
         themes.getStyleClass().add("segmented");
         for (Settings.Theme choice : Settings.Theme.values()) {
@@ -141,6 +148,7 @@ public final class SettingsController implements Page {
 
     @Override
     public void refresh() {
+        baseCurrency.refresh();
         showing = true;
         try {
             Settings settings = Appearance.settings();
