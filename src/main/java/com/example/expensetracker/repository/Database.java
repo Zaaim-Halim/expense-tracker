@@ -36,7 +36,7 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 5;
+    public static final int SCHEMA = 6;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
@@ -55,6 +55,10 @@ public final class Database implements AutoCloseable {
      * its account's. Schema 4's code, changing such a transaction's amount,
      * would leave the old price beside it, telling the user something that is
      * no longer true. So it may not open it either.
+     *
+     * <p>Schema 6 only records where each exchange rate came from, in a
+     * column with a default. Schema 5's code reads rates without it and writes
+     * its own as the user's, which is what they are. So it may still open it.
      */
     public static final int COMPATIBILITY = 5;
 
@@ -281,6 +285,9 @@ public final class Database implements AutoCloseable {
             }
             if (schema < 5) {
                 addOriginalPrices();
+            }
+            if (schema < 6) {
+                addRateSources();
             }
             connection.commit();
         } catch (SQLException e) {
@@ -522,6 +529,18 @@ public final class Database implements AutoCloseable {
                     + "CHECK (original_amount_cents IS NULL OR original_amount_cents > 0)");
             statement.execute("UPDATE meta SET value = '5' WHERE key = 'schema'");
             statement.execute("PRAGMA user_version = 5");
+        }
+    }
+
+    /**
+     * Schema 6: where each exchange rate came from. Every rate so far was
+     * entered by the user. The gate stays where it is: see
+     * {@link #COMPATIBILITY}.
+     */
+    private void addRateSources() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE exchange_rates ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+            statement.execute("UPDATE meta SET value = '6' WHERE key = 'schema'");
         }
     }
 

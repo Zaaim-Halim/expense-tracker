@@ -46,6 +46,9 @@ public final class SettingsController implements Page {
             () -> moneyRows.getScene() == null ? null : moneyRows.getScene().getWindow());
 
     private final ToggleGroup automatic = new ToggleGroup();
+    private final ToggleGroup online = new ToggleGroup();
+    private final Label ratesStatus = new Label();
+    private final Button updateRates = new Button("Update now");
     private final Label dataFolder = new Label();
     private final Label backupFolder = new Label();
     private final Button useDefaultFolder = new Button("Use default");
@@ -66,6 +69,7 @@ public final class SettingsController implements Page {
         baseCurrency.setup(service, dataChanged);
         moneyRows.getChildren().setAll(row("Base currency", CurrenciesController.BASE_HINT
                 + " Rates and other currencies are under Currencies.", baseCurrency.control()));
+        buildRatesRows(dataChanged);
         HBox themes = new HBox();
         themes.getStyleClass().add("segmented");
         for (Settings.Theme choice : Settings.Theme.values()) {
@@ -158,10 +162,70 @@ public final class SettingsController implements Page {
             numbers.setValue(settings.numberStyle());
             weekStart.setValue(settings.weekStart());
             select(automatic, settings.automaticBackups());
+            select(online, settings.onlineRates());
         } finally {
             showing = false;
         }
         refreshData();
+    }
+
+    // --- exchange rates online ---------------------------------------------------
+
+    private void buildRatesRows(Runnable dataChanged) {
+        HBox onOff = new HBox();
+        onOff.getStyleClass().add("segmented");
+        for (boolean on : new boolean[] {true, false}) {
+            ToggleButton button = new ToggleButton(on ? "On" : "Off");
+            button.setGraphic(Icons.of(on ? Icons.CHECK : Icons.CLOSE));
+            button.setUserData(on);
+            button.setToggleGroup(online);
+            button.getStyleClass().add("segment");
+            onOff.getChildren().add(button);
+        }
+        // Its own height, whatever the description beside it takes.
+        onOff.setMaxHeight(Region.USE_PREF_SIZE);
+        keepOneSelected(online);
+        online.selectedToggleProperty().addListener((observable, before, now) -> {
+            if (now != null && before != null) {
+                boolean on = (Boolean) now.getUserData();
+                change(settings -> settings.withOnlineRates(on));
+                // Turned on: today's rates now, rather than at the next start.
+                if (on && !showing) {
+                    OnlineRates.fetch(dataChanged);
+                }
+            }
+        });
+
+        updateRates.setGraphic(Icons.of(Icons.SYNC));
+        updateRates.getStyleClass().add("secondary");
+        updateRates.setOnAction(event -> OnlineRates.fetch(dataChanged));
+        ratesStatus.getStyleClass().add("setting-description");
+        ratesStatus.setWrapText(true);
+        OnlineRates.onChange(this::showRatesStatus);
+        showRatesStatus();
+
+        Label latest = new Label("Latest rates");
+        latest.getStyleClass().add("setting-title");
+        VBox text = new VBox(3, latest, ratesStatus);
+        text.setMinWidth(220);
+        HBox.setHgrow(text, Priority.ALWAYS);
+        HBox status = new HBox(24, text, updateRates);
+        status.setAlignment(Pos.CENTER_LEFT);
+        status.getStyleClass().add("setting-row");
+
+        moneyRows.getChildren().addAll(
+                row("Exchange rates online", "Today's rates, fetched when Expense Tracker starts, for the "
+                        + "currencies you use: the European Central Bank's, and ExchangeRate-API's for the "
+                        + "ones the bank does not publish, such as the Albanian lek. Rates you enter are "
+                        + "never replaced. Nothing is sent or fetched while this is off.", onOff),
+                status);
+    }
+
+    private void showRatesStatus() {
+        String line = OnlineRates.status();
+        ratesStatus.setText(line != null ? line
+                : "None fetched yet. \"Update now\" fetches today's once, whether this is on or off.");
+        updateRates.setDisable(OnlineRates.running());
     }
 
     // --- data and backups ------------------------------------------------------

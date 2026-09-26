@@ -95,6 +95,11 @@ public final class ExpenseTrackerApp extends Application {
             Data.run(store::backUpIfDue, made -> { }, e -> System.err.println(
                     "expense-tracker: the automatic backup failed: " + e.getMessage()));
         }
+        // Only when the user turned it on: otherwise nothing goes over the
+        // network but xPack's own update check.
+        if (settings.settings().onlineRates()) {
+            com.example.expensetracker.controller.OnlineRates.fetch(() -> { });
+        }
     }
 
     /**

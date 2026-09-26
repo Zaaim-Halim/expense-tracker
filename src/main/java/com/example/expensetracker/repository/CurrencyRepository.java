@@ -102,7 +102,7 @@ public final class CurrencyRepository {
         List<ExchangeRate> found = new ArrayList<>();
         try (Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery(
-                        "SELECT currency, effective_on, rate FROM exchange_rates ORDER BY currency, effective_on DESC")) {
+                        "SELECT currency, effective_on, rate, source FROM exchange_rates ORDER BY currency, effective_on DESC")) {
             while (rows.next()) {
                 found.add(read(rows));
             }
@@ -113,7 +113,7 @@ public final class CurrencyRepository {
     /** The rate for {@code currency} on {@code day}: the latest dated that day or before. */
     public Optional<ExchangeRate> rateOn(String currency, LocalDate day) throws SQLException {
         try (PreparedStatement query = connection.prepareStatement("""
-                SELECT currency, effective_on, rate FROM exchange_rates
+                SELECT currency, effective_on, rate, source FROM exchange_rates
                 WHERE currency = ? AND effective_on <= ?
                 ORDER BY effective_on DESC LIMIT 1""")) {
             query.setString(1, currency);
@@ -124,15 +124,92 @@ public final class CurrencyRepository {
         }
     }
 
-    /** Adds a rate, or replaces the one for the same currency and day. */
+    /**
+     * Adds a rate, or replaces the one for the same currency and day. The
+     * source is written out, never left to the column's default.
+     */
     public void saveRate(ExchangeRate rate) throws SQLException {
         try (PreparedStatement save = connection.prepareStatement(
-                "INSERT OR REPLACE INTO exchange_rates(currency, effective_on, rate) VALUES (?, ?, ?)")) {
-            save.setString(1, rate.currency());
-            save.setString(2, rate.effectiveOn().toString());
-            save.setString(3, rate.rate().stripTrailingZeros().toPlainString());
+                "INSERT OR REPLACE INTO exchange_rates(currency, effective_on, rate, source) VALUES (?, ?, ?, ?)")) {
+            bind(save, rate);
             save.executeUpdate();
         }
+    }
+
+    /**
+     * Adds fetched rates for days that have none, all or nothing. A rate
+     * already there, the user's above all, is kept.
+     *
+     * @return how many were added
+     */
+    public int addFetched(java.util.List<ExchangeRate> rates) throws SQLException {
+        boolean autoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try (PreparedStatement add = connection.prepareStatement(
+                "INSERT OR IGNORE INTO exchange_rates(currency, effective_on, rate, source) VALUES (?, ?, ?, ?)")) {
+            int added = 0;
+            for (ExchangeRate rate : rates) {
+                bind(add, rate);
+                added += add.executeUpdate();
+            }
+            connection.commit();
+            return added;
+        } catch (SQLException | RuntimeException e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(autoCommit);
+        }
+    }
+
+    /** Removes every rate a feed supplied; the user's own stay. */
+    public int deleteFetched() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            return statement.executeUpdate("DELETE FROM exchange_rates WHERE source <> 'manual'");
+        }
+    }
+
+    /** How many rates the user entered. */
+    public int manualRateCount() throws SQLException {
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery(
+                        "SELECT COUNT(*) FROM exchange_rates WHERE source = 'manual'")) {
+            rows.next();
+            return rows.getInt(1);
+        }
+    }
+
+    /** The currencies transactions were priced in, other than their accounts'. */
+    public java.util.List<String> priceCurrencies() throws SQLException {
+        java.util.List<String> found = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("""
+                        SELECT DISTINCT original_currency FROM transactions
+                        WHERE original_currency IS NOT NULL ORDER BY 1""")) {
+            while (rows.next()) {
+                found.add(rows.getString(1));
+            }
+        }
+        return found;
+    }
+
+    /** The currencies accounts are in. */
+    public java.util.List<String> accountCurrencies() throws SQLException {
+        java.util.List<String> found = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("SELECT DISTINCT currency FROM accounts ORDER BY 1")) {
+            while (rows.next()) {
+                found.add(rows.getString(1));
+            }
+        }
+        return found;
+    }
+
+    private static void bind(PreparedStatement statement, ExchangeRate rate) throws SQLException {
+        statement.setString(1, rate.currency());
+        statement.setString(2, rate.effectiveOn().toString());
+        statement.setString(3, rate.rate().stripTrailingZeros().toPlainString());
+        statement.setString(4, rate.source().key());
     }
 
     public void deleteRate(ExchangeRate rate) throws SQLException {
@@ -154,6 +231,7 @@ public final class CurrencyRepository {
     }
 
     private static ExchangeRate read(ResultSet rows) throws SQLException {
-        return new ExchangeRate(rows.getString(1), LocalDate.parse(rows.getString(2)), new BigDecimal(rows.getString(3)));
+        return new ExchangeRate(rows.getString(1), LocalDate.parse(rows.getString(2)), new BigDecimal(rows.getString(3)),
+                ExchangeRate.Source.fromKey(rows.getString(4)));
     }
 }

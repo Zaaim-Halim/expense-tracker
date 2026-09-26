@@ -191,6 +191,13 @@ public final class Render {
                 double viewport = scroll.getViewportBounds().getHeight();
                 scroll.setVvalue(Math.min(1, (card.getBoundsInParent().getMinY() - 20) / (content - viewport)));
                 write(scene, directory.resolve(dark ? "settings-data-dark.png" : "settings-data.png"));
+                // And scrolled to Money: the base currency and the rates online.
+                javafx.scene.Node money = scene.getRoot().lookupAll(".card").stream()
+                        .filter(node -> node.lookupAll(".card-title").stream()
+                                .anyMatch(title -> "Money".equals(((Label) title).getText())))
+                        .findFirst().orElseThrow();
+                scroll.setVvalue(Math.min(1, (money.getBoundsInParent().getMinY() - 20) / (content - viewport)));
+                write(scene, directory.resolve(dark ? "settings-money-dark.png" : "settings-money.png"));
                 ((javafx.scene.control.ScrollPane) scene.getRoot().lookup(".page-scroll")).setVvalue(0);
             }
             Appearance.change(light);
@@ -457,6 +464,15 @@ public final class Render {
         service.save(Transaction.expense(travel, 4_850, service.categoryNamed("Food"), "Dinner in Brooklyn",
                 today, "", List.of("travel")));
         service.saveCustomCurrency(new com.example.expensetracker.model.CurrencyUnit("PTS", "Air miles", 0, true));
+        // A day of the European Central Bank's rates, beside the ones entered.
+        // And the lek, which the bank does not publish: from the other feed.
+        service.save(new Account(0, "Tirana", Account.Kind.BANK, "ALL", 250_000));
+        java.util.Map<String, java.math.BigDecimal> wider = java.util.Map.of("EUR", java.math.BigDecimal.ONE,
+                "ALL", new java.math.BigDecimal("91.621825"), "USD", new java.math.BigDecimal("1.14"));
+        service.keepRates(new com.example.expensetracker.service.EcbRates.Feed(today, java.util.Map.of("EUR",
+                java.math.BigDecimal.ONE, "USD", new java.math.BigDecimal("1.1403"), "GBP",
+                new java.math.BigDecimal("0.8435"))),
+                () -> new com.example.expensetracker.service.EcbRates.Feed(today, wider));
         // Paid in pounds with the euro card: the price kept beside the charge.
         service.save(new Transaction(0, Transaction.Type.EXPENSE, card, 2_988, null, 0,
                 service.categoryNamed("Entertainment"), "National Gallery", "Exhibition in London", today, "",

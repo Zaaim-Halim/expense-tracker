@@ -35,6 +35,7 @@ public final class SettingsStore {
     static final String WEEK_START = "week.start";
     static final String AUTOMATIC_BACKUPS = "backup.automatic";
     static final String BACKUP_FOLDER = "backup.folder";
+    static final String ONLINE_RATES = "rates.online";
 
     private final Path file;
     /** Everything the file held, including keys this version does not know. */
@@ -92,6 +93,7 @@ public final class SettingsStore {
         next.setProperty(NUMBER_FORMAT, changed.numberStyle().key());
         next.setProperty(WEEK_START, changed.weekStart().key());
         next.setProperty(AUTOMATIC_BACKUPS, Boolean.toString(changed.automaticBackups()));
+        next.setProperty(ONLINE_RATES, Boolean.toString(changed.onlineRates()));
         if (changed.backupFolder() == null) {
             next.remove(BACKUP_FOLDER);
         } else {
@@ -127,7 +129,10 @@ public final class SettingsStore {
                 choice(stored, NUMBER_FORMAT, Settings.NumberStyle.values(), defaults.numberStyle()),
                 choice(stored, WEEK_START, Settings.WeekStart.values(), defaults.weekStart()),
                 !"false".equals(stored.getProperty(AUTOMATIC_BACKUPS, "").strip()),
-                null).withBackupFolder(stored.getProperty(BACKUP_FOLDER));
+                null,
+                // Only an explicit yes: anything else leaves the network alone.
+                "true".equals(stored.getProperty(ONLINE_RATES, "").strip()))
+                .withBackupFolder(stored.getProperty(BACKUP_FOLDER));
     }
 
     private static <T extends Settings.Choice> T choice(Properties stored, String key, T[] values,

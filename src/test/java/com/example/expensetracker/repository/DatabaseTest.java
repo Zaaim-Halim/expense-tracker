@@ -371,4 +371,26 @@ class DatabaseTest {
         assertThrows(SQLException.class, () -> Database.open(file).close());
         assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(file)), "the file was changed");
     }
+
+    @Test
+    void a_schema_five_file_records_its_rates_as_the_users_and_keeps_the_gate_where_it_was() throws Exception {
+        Path file = dir.resolve("expenses.db");
+        try (java.io.InputStream in = DatabaseTest.class.getResourceAsStream("/schema-5.db")) {
+            Files.copy(in, file);
+        }
+        try (Database database = Database.open(file)) {
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            var rates = new CurrencyRepository(database).rates();
+            assertEquals(1, rates.size());
+            assertEquals(com.example.expensetracker.model.ExchangeRate.Source.MANUAL, rates.get(0).source());
+            List<Transaction> all = new TransactionRepository(database).findAll();
+            assertEquals(new Transaction.Original("GBP", 2_500), all.stream()
+                    .filter(t -> t.original() != null).findFirst().orElseThrow().original());
+            assertEquals(7_450, new TransactionRepository(database).expenseCountAndTotal()[1]);
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(5, count(after, "PRAGMA user_version"),
+                    "only a column with a default was added, so 2.2 may still open the file");
+        }
+    }
 }

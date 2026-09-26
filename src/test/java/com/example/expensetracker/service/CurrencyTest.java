@@ -324,4 +324,124 @@ class CurrencyTest {
         assertEquals(null, service.allTransactions().stream().filter(t -> t.id() == saved.id())
                 .findFirst().orElseThrow().original(), "an edit without a price clears it");
     }
+
+    private static EcbRates.Feed feed(LocalDate day, String usd) {
+        return new EcbRates.Feed(day, java.util.Map.of("EUR", BigDecimal.ONE, "USD", new BigDecimal(usd),
+                "JPY", new BigDecimal("179.70"), "GBP", new BigDecimal("0.8435")));
+    }
+
+    @Test
+    void fetched_rates_fill_the_days_that_have_none_and_never_replace_the_users() throws SQLException {
+        rate("USD", SEP_15, "0.95");
+        EcbRates.Result result = service.keepRates(feed(SEP_15, "1.25"));
+        assertEquals(1, result.added(), "JPY only: USD already had the user's rate for that day");
+        assertEquals(new BigDecimal("0.95"), service.rateOn("USD", SEP_15).orElseThrow().rate());
+        assertEquals(ExchangeRate.Source.MANUAL, service.rateOn("USD", SEP_15).orElseThrow().source());
+        assertEquals(ExchangeRate.Source.ECB, service.rateOn("JPY", SEP_15).orElseThrow().source());
+
+        EcbRates.Result later = service.keepRates(feed(SEP_15.plusDays(1), "1.25"));
+        assertEquals(2, later.added());
+        assertEquals(new BigDecimal("0.8"), service.rateOn("USD", SEP_15.plusDays(1)).orElseThrow().rate());
+        assertEquals(0, service.keepRates(feed(SEP_15.plusDays(1), "1.30")).added(), "a day is fetched once");
+    }
+
+    @Test
+    void the_currencies_in_use_include_the_ones_prices_were_paid_in() throws SQLException {
+        service.save(new Transaction(0, Transaction.Type.EXPENSE, euros, 2_988, null, 0,
+                service.categoryNamed("Food"), "", "Lunch in London", SEP_15, "", List.of(), null,
+                new Transaction.Original("GBP", 2_500)));
+        assertEquals(List.of("GBP", "JPY", "USD"), service.currenciesInUse());
+        EcbRates.Result result = service.keepRates(feed(SEP_15, "1.25"));
+        assertEquals(3, result.added());
+        assertEquals(List.of(), result.missing());
+    }
+
+    @Test
+    void a_currency_the_feed_does_not_publish_is_named() throws SQLException {
+        service.save(new Account(0, "Rabat", Account.Kind.BANK, "MAD", 0));
+        assertEquals(List.of("MAD"), service.keepRates(feed(SEP_15, "1.25")).missing());
+    }
+
+    @Test
+    void fetched_rates_never_lock_the_base_currency_and_the_users_still_do() throws Exception {
+        try (Database fresh = Database.open(dir.resolve("fetched.db"))) {
+            LedgerService other = new LedgerService(fresh);
+            other.changeBaseCurrency("EUR");
+            other.saveCustomCurrency(new CurrencyUnit("PTS", "Points", 0, true));
+            other.saveRate(new ExchangeRate("PTS", SEP_1, new BigDecimal("0.01")));
+            assertThrows(IllegalArgumentException.class, () -> other.changeBaseCurrency("GBP"),
+                    "the user's own rate is in euros");
+            other.deleteRate(other.rates().get(0));
+
+            // A price paid in dollars is what makes the dollar wanted.
+            other.save(new Transaction(0, Transaction.Type.EXPENSE, other.defaultAccount(), 900, null, 0,
+                    other.categoryNamed("Food"), "", "Coffee in New York", SEP_1, "", List.of(), null,
+                    new Transaction.Original("USD", 1_125)));
+            assertEquals(1, other.keepRates(new EcbRates.Feed(SEP_1, java.util.Map.of("EUR", BigDecimal.ONE,
+                    "USD", new BigDecimal("1.25")))).added());
+            assertEquals(1, other.rates().size(), "a fetched rate to be discarded");
+            other.changeBaseCurrency("GBP");
+            assertEquals("GBP", other.baseCurrency().code());
+            assertEquals(List.of(), other.rates(), "rates in the old base were fetched, and are gone");
+        }
+    }
+
+    /** What the second feed says: the lek among others, per euro. */
+    private static EcbRates.Feed wider(LocalDate day) {
+        return new EcbRates.Feed(day, java.util.Map.of("EUR", BigDecimal.ONE, "USD", new BigDecimal("1.14"),
+                "ALL", new BigDecimal("91.6"), "JPY", new BigDecimal("180")));
+    }
+
+    @Test
+    void each_currency_comes_from_the_bank_when_it_can_and_from_the_other_feed_otherwise() throws SQLException {
+        service.save(new Account(0, "Tirana", Account.Kind.BANK, "ALL", 0));
+        EcbRates.Result result = service.keepRates(feed(SEP_15, "1.25"), () -> wider(SEP_15));
+        assertEquals(3, result.added());
+        assertEquals(List.of(), result.missing());
+        assertEquals(ExchangeRate.Source.ECB, service.rateOn("USD", SEP_15).orElseThrow().source());
+        assertEquals(new BigDecimal("0.8"), service.rateOn("USD", SEP_15).orElseThrow().rate(), "the bank's, not 1/1.14");
+        ExchangeRate lek = service.rateOn("ALL", SEP_15).orElseThrow();
+        assertEquals(ExchangeRate.Source.EXCHANGE_RATE_API, lek.source());
+        assertEquals(new BigDecimal("0.0109170306"), lek.rate(), "1 / 91.6");
+    }
+
+    @Test
+    void a_base_the_bank_does_not_publish_takes_every_rate_from_the_other_feed() throws Exception {
+        try (Database fresh = Database.open(dir.resolve("lek.db"))) {
+            LedgerService other = new LedgerService(fresh);
+            other.changeBaseCurrency("ALL");
+            other.save(new Account(0, "Savings", Account.Kind.SAVINGS, "EUR", 0));
+            other.save(new Account(0, "US card", Account.Kind.CREDIT_CARD, "USD", 0));
+            EcbRates.Result result = other.keepRates(feed(SEP_15, "1.25"), () -> wider(SEP_15));
+            assertEquals(2, result.added());
+            assertEquals(new BigDecimal("91.6"), other.rateOn("EUR", SEP_15).orElseThrow().rate());
+            assertEquals(new BigDecimal("80.350877193"), other.rateOn("USD", SEP_15).orElseThrow().rate(),
+                    "91.6 / 1.14 from the one feed, never the bank's dollar with the other's lek");
+            assertTrue(other.rates().stream().allMatch(r -> r.source() == ExchangeRate.Source.EXCHANGE_RATE_API));
+        }
+    }
+
+    @Test
+    void the_other_feed_is_never_asked_when_the_bank_covers_everything() throws SQLException {
+        boolean[] asked = {false};
+        EcbRates.Result result = service.keepRates(feed(SEP_15, "1.25"), () -> {
+            asked[0] = true;
+            return wider(SEP_15);
+        });
+        assertEquals(2, result.added());
+        assertTrue(!asked[0], "a second site was contacted for nothing");
+        assertTrue(!service.needsMoreThan(feed(SEP_15, "1.25")));
+    }
+
+    @Test
+    void when_the_other_feed_fails_the_banks_rates_are_still_kept_and_the_reason_given() throws SQLException {
+        service.save(new Account(0, "Tirana", Account.Kind.BANK, "ALL", 0));
+        assertTrue(service.needsMoreThan(feed(SEP_15, "1.25")));
+        EcbRates.Result result = service.keepRates(feed(SEP_15, "1.25"), () -> {
+            throw new java.io.IOException("open.er-api.com answered 503");
+        });
+        assertEquals(2, result.added(), "USD and JPY from the bank");
+        assertEquals(List.of("ALL"), result.missing());
+        assertTrue(result.problem().contains("503"), result.problem());
+    }
 }

@@ -41,6 +41,11 @@ application. Why it exists, what it proves so far and what comes next are in
   arrived. A price in another currency than the account's (25.00 GBP paid
   with a euro card) is kept beside what the account was charged. The base
   currency is set in Settings or on the Currencies page.
+- **Exchange rates online (off unless turned on):** today's rates for the
+  currencies you use, fetched when the application starts or on request:
+  the European Central Bank's, and ExchangeRate-API's for the ones the bank
+  does not publish, such as the Albanian lek. Each rate says where it came
+  from, and a rate you entered is never replaced by a fetched one.
 - **Categories:** for expenses or for income, a set of each to start with; add
   your own, rename, recolour. A category or an account still in use cannot be
   deleted, so no transaction is ever lost with it.
@@ -92,6 +97,7 @@ With no command, opens the application.
   --version                         print the version and exit
   --status                          print where the data is and what it holds
   --add DESCRIPTION AMOUNT CATEGORY add an expense dated today, to the first account
+  --fetch-rates                     keep today's exchange rates for the currencies in use
   --backup                          copy the data into the backup folder now
   --help                            show this help
 ```
@@ -106,7 +112,7 @@ java.version=21.0.8
 java.home=…/io.xpack.examples.expensetracker/versions/1.0.0/runtime
 data.dir=…
 database=…/expenses.db
-schema=5
+schema=6
 xpack.application.dir=…/io.xpack.examples.expensetracker
 expenses=2
 total=15.90

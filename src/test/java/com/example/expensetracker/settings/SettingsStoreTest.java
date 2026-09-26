@@ -113,4 +113,16 @@ class SettingsStoreTest {
         SettingsStore.load(file()).save(chosen.withBackupFolder(" "));
         assertEquals(null, read().getProperty("backup.folder"), "clearing the folder did not remove it");
     }
+
+    @Test
+    void exchange_rates_are_fetched_only_when_turned_on_and_the_choice_is_kept() throws Exception {
+        java.nio.file.Path file = java.nio.file.Files.createTempDirectory("settings").resolve("settings.properties");
+        SettingsStore store = SettingsStore.load(file);
+        org.junit.jupiter.api.Assertions.assertFalse(store.settings().onlineRates(), "on without being asked");
+        store.save(store.settings().withOnlineRates(true));
+        org.junit.jupiter.api.Assertions.assertTrue(SettingsStore.load(file).settings().onlineRates());
+        java.nio.file.Files.writeString(file, "rates.online=yes\n");
+        org.junit.jupiter.api.Assertions.assertFalse(SettingsStore.load(file).settings().onlineRates(),
+                "anything but an explicit true leaves the network alone");
+    }
 }

@@ -8,7 +8,7 @@
        application xPack is validated against. See README.md and BACKLOG.md. -->
   <groupId>io.xpack.examples</groupId>
   <artifactId>expense-tracker</artifactId>
-  <version>2.2.1</version>
+  <version>2.3.0</version>
   <name>Expense Tracker</name>
   <description>Track what you spend, by category and by month.</description>
 
@@ -121,16 +121,21 @@
           <payloadResources>${app.icons}</payloadResources>
 
           <!-- A runtime linked for the application, so the user needs no
-               Java. Exactly the modules jdeps reports (print-module-deps) for
-               the application and every library it ships; jlink adds what
-               these need in turn, such as java.logging and java.xml. -->
+               Java. The modules jdeps reports (print-module-deps) for the
+               application and every library it ships; jlink adds what these
+               need in turn, such as java.logging and java.xml. And one jdeps
+               cannot report: jdk.crypto.ec, the elliptic curves HTTPS needs,
+               which code reaches only as a security provider. Without it the
+               exchange-rate download fails its handshake. -->
           <runtime>
             <bundled>true</bundled>
             <modules>
               <module>java.base</module>
               <module>java.desktop</module>
+              <module>java.net.http</module>
               <module>java.scripting</module>
               <module>java.sql</module>
+              <module>jdk.crypto.ec</module>
               <module>jdk.jfr</module>
               <module>jdk.unsupported</module>
             </modules>

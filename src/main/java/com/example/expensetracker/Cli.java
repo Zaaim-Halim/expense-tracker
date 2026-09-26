@@ -38,6 +38,7 @@ final class Cli {
                 case STATUS -> status(paths, out);
                 case ADD -> add(options, paths, out);
                 case BACKUP -> backup(paths, out);
+                case FETCH_RATES -> fetchRates(paths, out);
                 default -> throw new IllegalStateException(options.command() + " is not a command");
             };
             if (code == 0) {
@@ -73,6 +74,29 @@ final class Cli {
             out.println("transactions=" + ledger.transactionCount());
             out.println("accounts=" + ledger.allAccounts().size());
             out.println("base.currency=" + ledger.baseCurrency().code());
+        }
+        return 0;
+    }
+
+    /**
+     * Today's European Central Bank rates, for the currencies in use: asked
+     * for by name, so fetched whatever Settings says about fetching by itself.
+     * Prints the day, how many were added and what the feed does not publish.
+     */
+    private static int fetchRates(AppPaths paths, PrintStream out) throws IOException, SQLException {
+        paths.create();
+        var feed = com.example.expensetracker.service.EcbRates.parse(
+                com.example.expensetracker.service.EcbRates.download(
+                        com.example.expensetracker.service.EcbRates.FEED));
+        try (Database database = Database.open(paths.database())) {
+            var result = new LedgerService(database).keepRates(feed,
+                    com.example.expensetracker.service.ExchangeRateApi::fetch);
+            out.println("rates.day=" + result.day());
+            out.println("rates.added=" + result.added());
+            out.println("rates.missing=" + String.join(",", result.missing()));
+            if (result.problem() != null) {
+                out.println("rates.problem=" + result.problem());
+            }
         }
         return 0;
     }

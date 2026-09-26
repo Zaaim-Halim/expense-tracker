@@ -30,7 +30,7 @@ public final class CurrenciesController implements Page {
 
     /** What the base currency is for, and when it can change: said the same wherever it is chosen. */
     static final String BASE_HINT = "Every total, report and the net worth is in it. It can change while every "
-            + "account is in it and there are no rates; after that it stays.";
+            + "account is in it and there are no rates you entered; fetched rates are fetched again in the new one.";
 
     @FXML private Label summaryLabel;
     @FXML private Button newRateButton;
@@ -130,6 +130,20 @@ public final class CurrenciesController implements Page {
         for (ExchangeRate rate : rates) {
             rateRows.getChildren().add(rateRow(rate, current));
         }
+        // Its terms ask for a credit wherever its rates are shown.
+        if (rates.stream().anyMatch(rate -> rate.source() == ExchangeRate.Source.EXCHANGE_RATE_API)) {
+            Button credit = new Button(com.example.expensetracker.service.ExchangeRateApi.CREDIT);
+            credit.setGraphic(Icons.of(Icons.ARROW_FORWARD));
+            credit.setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
+            credit.getStyleClass().add("link");
+            credit.setOnAction(event -> {
+                if (Data.hostServices() != null) {
+                    Data.hostServices().showDocument(
+                            com.example.expensetracker.service.ExchangeRateApi.SITE.toString());
+                }
+            });
+            rateRows.getChildren().add(credit);
+        }
         customRows.getChildren().clear();
         if (own.isEmpty()) {
             customRows.getChildren().add(note("None. Add one for anything ISO 4217 does not list, such as a "
@@ -166,7 +180,8 @@ public final class CurrenciesController implements Page {
     private Node rateRow(ExchangeRate rate, CurrencyUnit current) {
         Label title = new Label("1 " + rate.currency() + " = " + rate.rate().toPlainString() + " " + current.code());
         title.getStyleClass().add("row-title");
-        Label from = new Label("From " + Ui.date(rate.effectiveOn()));
+        Label from = new Label("From " + Ui.date(rate.effectiveOn())
+                + " · " + rate.source().label());
         from.getStyleClass().add("row-subtitle");
         VBox text = new VBox(2, title, from);
         HBox.setHgrow(text, Priority.ALWAYS);

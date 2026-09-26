@@ -486,9 +486,13 @@ public final class LedgerService {
             throw new IllegalArgumentException("Some accounts are in other currencies, so the base currency stays "
                     + base.code());
         }
-        if (currencies.rateCount() > 0) {
-            throw new IllegalArgumentException("Every rate is in " + base.code()
-                    + ", so the base currency stays " + base.code() + " while there are rates");
+        // Rates the user entered are in the old base and would silently mean
+        // something else. Fetched ones can be fetched again in the new base,
+        // and nothing recorded depends on them: every account is in the base,
+        // so no transaction was converted with one.
+        if (currencies.manualRateCount() > 0) {
+            throw new IllegalArgumentException("The rates you entered are in " + base.code()
+                    + ", so the base currency stays " + base.code() + " while there are any");
         }
         // Amounts are whole minor units: a cent is not a yen. With other
         // decimals, every amount already stored would change its meaning.
@@ -497,6 +501,7 @@ public final class LedgerService {
             throw new IllegalArgumentException(next.code() + " has " + next.digits() + " decimals and " + base.code()
                     + " has " + base.digits() + ", so the amounts already recorded would change");
         }
+        currencies.deleteFetched();
         currencies.changeBase(next.code());
     }
 
@@ -577,6 +582,77 @@ public final class LedgerService {
         ExchangeRate valid = new ExchangeRate(currency.code(), rate.effectiveOn(), rate.rate().stripTrailingZeros());
         currencies.saveRate(valid);
         return valid;
+    }
+
+    /**
+     * The currencies rates are wanted for: the accounts', the ones prices were
+     * paid in, and any that already has a rate. Not the base.
+     */
+    public List<String> currenciesInUse() throws SQLException {
+        TreeSet<String> codes = new TreeSet<>(currencies.accountCurrencies());
+        codes.addAll(currencies.priceCurrencies());
+        currencies.rates().forEach(rate -> codes.add(rate.currency()));
+        codes.remove(baseCurrency().code());
+        return List.copyOf(codes);
+    }
+
+    /**
+     * Whether the European Central Bank's feed leaves anything in use without
+     * a rate: the base itself, or a currency, it does not publish. Only then
+     * is the other feed worth downloading.
+     */
+    public boolean needsMoreThan(EcbRates.Feed ecb) throws SQLException {
+        String base = baseCurrency().code();
+        return !ecb.perEuro().containsKey(base)
+                || currenciesInUse().stream().anyMatch(code -> !ecb.perEuro().containsKey(code));
+    }
+
+    /** {@link #keepRates(EcbRates.Feed, EcbRates.Loader)}, with the European Central Bank's feed alone. */
+    public EcbRates.Result keepRates(EcbRates.Feed feed) throws SQLException {
+        return keepRates(feed, null);
+    }
+
+    /**
+     * Keeps a day's rates for the currencies in use: the European Central
+     * Bank's where it publishes both the currency and the base, and the other
+     * feed's for the rest. Each rate comes from one feed; they are never
+     * mixed in one sum. The other feed is only downloaded when something is
+     * missing.
+     *
+     * <p>A day that already has a rate keeps it: the user's own, above all,
+     * is never replaced by a fetched one. When the other feed cannot be had,
+     * the bank's rates are still kept and the result says why the rest are
+     * missing.
+     */
+    public EcbRates.Result keepRates(EcbRates.Feed ecb, EcbRates.Loader other) throws SQLException {
+        String base = baseCurrency().code();
+        List<String> wanted = currenciesInUse();
+        List<ExchangeRate> rates = new ArrayList<>();
+        List<String> rest = new ArrayList<>(wanted);
+        if (ecb.perEuro().containsKey(base)) {
+            rates.addAll(EcbRates.ratesIn(ecb, base, wanted, ExchangeRate.Source.ECB));
+            rates.forEach(rate -> rest.remove(rate.currency()));
+        }
+        String problem = null;
+        LocalDate day = ecb.day();
+        if (!rest.isEmpty() && other != null) {
+            try {
+                EcbRates.Feed more = other.load();
+                if (more.perEuro().containsKey(base)) {
+                    List<ExchangeRate> found =
+                            EcbRates.ratesIn(more, base, rest, ExchangeRate.Source.EXCHANGE_RATE_API);
+                    rates.addAll(found);
+                    found.forEach(rate -> rest.remove(rate.currency()));
+                    if (!ecb.perEuro().containsKey(base)) {
+                        day = more.day();
+                    }
+                }
+            } catch (java.io.IOException | IllegalArgumentException e) {
+                problem = e.getMessage();
+            }
+        }
+        int added = currencies.addFetched(rates);
+        return new EcbRates.Result(day, added, List.copyOf(rest), problem);
     }
 
     public void deleteRate(ExchangeRate rate) throws SQLException {
