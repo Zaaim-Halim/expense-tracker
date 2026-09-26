@@ -25,6 +25,8 @@ public final class ExpenseService {
     public static final int MAX_DESCRIPTION = 120;
     public static final int MAX_NOTE = 500;
     public static final int MAX_CATEGORY_NAME = 40;
+    public static final int MAX_TAGS = 10;
+    public static final int MAX_TAG_NAME = 30;
 
     private static final Pattern COLOR = Pattern.compile("#[0-9a-fA-F]{6}");
 
@@ -44,6 +46,16 @@ public final class ExpenseService {
 
     public List<Expense> recentExpenses(int limit) throws SQLException {
         return expenses.findRecent(limit);
+    }
+
+    /** The expenses {@code filter} lets through, newest first. */
+    public List<Expense> search(ExpenseFilter filter) throws SQLException {
+        return expenses.findAll().stream().filter(filter::matches).toList();
+    }
+
+    /** Every tag some expense carries, alphabetically. */
+    public List<String> allTags() throws SQLException {
+        return expenses.allTags();
     }
 
     /** Saves a new expense, or changes an existing one (a non-zero id). */
@@ -97,8 +109,17 @@ public final class ExpenseService {
         if (note.length() > MAX_NOTE) {
             throw new IllegalArgumentException("Keep the note under " + MAX_NOTE + " characters");
         }
+        if (expense.tags().size() > MAX_TAGS) {
+            throw new IllegalArgumentException("Use at most " + MAX_TAGS + " tags");
+        }
+        for (String tag : expense.tags()) {
+            if (tag.length() > MAX_TAG_NAME) {
+                throw new IllegalArgumentException(
+                        "Keep each tag under " + MAX_TAG_NAME + " characters");
+            }
+        }
         return new Expense(expense.id(), description, expense.amountCents(), expense.category(),
-                date, note);
+                date, note, expense.tags());
     }
 
     // --- categories ----------------------------------------------------------

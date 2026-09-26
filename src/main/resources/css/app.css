@@ -1146,3 +1146,113 @@
 .text-area .scroll-pane > .viewport {
     -fx-background-color: transparent;
 }
+
+/* --- search and filters -------------------------------------------------- */
+
+.search-box {
+    -fx-background-color: -surface;
+    -fx-background-radius: 9;
+    -fx-border-color: -input-border;
+    -fx-border-radius: 9;
+    -fx-padding: 0 4 0 12;
+    -fx-min-height: 38;
+}
+
+.search-box:focus-within {
+    -fx-border-color: -accent;
+}
+
+.search-box .search-icon {
+    -fx-fill: -muted;
+    -fx-scale-x: 0.8;
+    -fx-scale-y: 0.8;
+}
+
+.search-box .search-input,
+.search-box .search-input:focused {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 8 4 8 0;
+}
+
+.filter-label {
+    -fx-text-fill: -muted;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.filter-error {
+    -fx-text-fill: -danger;
+    -fx-font-size: 12px;
+}
+
+.filter-toggle:selected,
+.filter-toggle:selected:hover {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: -accent-soft;
+    -fx-text-fill: -accent-text;
+}
+
+.filter-toggle:selected .icon {
+    -fx-fill: -accent-text;
+}
+
+/* --- tags ---------------------------------------------------------------- */
+
+.tag-chip {
+    -fx-background-color: transparent;
+    -fx-border-color: -input-border;
+    -fx-border-radius: 99;
+    -fx-background-radius: 99;
+    -fx-padding: 1 8 1 8;
+    -fx-font-size: 11px;
+    -fx-text-fill: -text-2;
+}
+
+.tag-suggestion,
+.tag-suggestion:hover,
+.tag-suggestion:armed {
+    -fx-background-radius: 99;
+    -fx-border-radius: 99;
+    -fx-padding: 3 10 3 7;
+    -fx-font-size: 11.5px;
+    -fx-graphic-text-gap: 4;
+    -fx-text-fill: -text-2;
+}
+
+.tag-suggestion:hover {
+    -fx-border-color: -accent;
+    -fx-text-fill: -accent-text;
+}
+
+.tag-suggestion .icon {
+    -fx-scale-x: 0.6;
+    -fx-scale-y: 0.6;
+    -fx-fill: -muted;
+}
+
+.tag-suggestion:hover .icon {
+    -fx-fill: -accent-text;
+}
+
+/* The filter row lines up: every control the same height. */
+.filter-toggle {
+    -fx-padding: 8 16 8 16;
+    -fx-font-size: 13px;
+    -fx-graphic-text-gap: 8;
+    -fx-cursor: hand;
+}
+
+.filter-bar .search-box,
+.filter-bar .combo-box-base,
+.filter-bar .button,
+.filter-bar .toggle-button,
+.filter-bar .text-field {
+    -fx-min-height: 40;
+    -fx-pref-height: 40;
+}
+
+.filter-bar .search-box .search-input {
+    -fx-min-height: 36;
+    -fx-pref-height: 36;
+}

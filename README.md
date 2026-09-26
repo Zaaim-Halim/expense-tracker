@@ -24,6 +24,11 @@ application. Why it exists, what it proves so far and what comes next are in
   spending by category and the latest expenses.
 - **Expenses:** add, edit and delete; sortable by date, description, category
   or amount; double-click or Enter to edit, Delete to remove.
+- **Search and filters:** search descriptions, notes and tags (case and
+  accents ignored, so "cafe" finds "Café"); filter by category, tag, a date
+  range and an amount range; the total of what is shown.
+- **Tags:** any number of labels per expense (travel, work, family…), picked
+  from the ones already in use or typed.
 - **Categories:** eight to start with; add your own, rename, recolour; a
   category still holding expenses cannot be deleted, so no expense is ever lost
   with it.
@@ -31,8 +36,9 @@ application. Why it exists, what it proves so far and what comes next are in
   how dates, amounts and the first day of the week are written. Saved as they
   change, in `settings.properties` beside the data, so updates keep them.
 - **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
-  elsewhere), listed in Settings: N for a new expense, 1–3 for the pages,
-  comma for Settings; Enter edits and Delete removes the selected row.
+  elsewhere), listed in Settings: N for a new expense, F to search, 1–3 for
+  the pages, comma for Settings; Enter edits and Delete removes the selected
+  row.
 - **Your data stays yours:** everything is in one SQLite file outside the
   installation, so updating or uninstalling the application never touches it.
 
@@ -49,6 +55,12 @@ are exact.
 
 `--data-dir=DIR` keeps it somewhere else. Settings are in
 `settings.properties` in the same directory.
+
+When a new version changes how the data is stored, it first keeps a copy of
+the file as it was, beside it: `expenses.db.schema-1.bak` before the upgrade
+to schema 2. A change that only adds (as schema 2 did, for tags) leaves the
+file readable by the version before, so going back to it after an update
+loses nothing.
 
 ## Command line
 
@@ -73,7 +85,7 @@ java.version=21.0.8
 java.home=…/io.xpack.examples.expensetracker/versions/1.0.0/runtime
 data.dir=…
 database=…/expenses.db
-schema=1
+schema=2
 xpack.application.dir=…/io.xpack.examples.expensetracker
 expenses=2
 total=15.90

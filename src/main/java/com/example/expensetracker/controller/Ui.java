@@ -48,7 +48,14 @@ final class Ui {
         return chip;
     }
 
-    /** Tells the user something went wrong, in words they can act on. */
+    /** A tag, as a small outlined pill. */
+    static Node tagChip(String name) {
+        Label label = new Label(name);
+        label.getStyleClass().add("tag-chip");
+        return label;
+    }
+
+        /** Tells the user something went wrong, in words they can act on. */
     static void error(Window owner, String header, String message) {
         errorAlert(owner, header, message).showAndWait();
     }

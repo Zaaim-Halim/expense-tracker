@@ -46,8 +46,8 @@ What has been proven, by which check. `validate-install.sh` is
 | Restart onto the new version | ✅ | 1.0.1 started, reported healthy and was committed; 1.0.0 kept for rollback |
 | Data preserved across updates | ✅ | 1.0.1: the same expenses and total as before |
 | Multiple sequential updates | ☐ | step 2 |
-| Settings survive an update | ☐ | 1.1.0 writes the first settings file; the release after it can prove it |
-| "New version ready" notice | ❌ | xPack gap: installers leave the notice out (below) |
+| Settings survive an update | ✅ | 1.1.1 → 1.1.2: the accent, date format and first day of the week chosen in 1.1.x were all still set |
+| "New version ready" notice | ✅ | 1.1.1 → 1.1.2 with xPack 0.4.2: the notice appeared, the user chose to restart, and the app came back on 1.1.2, healthy |
 | Update while the application runs | ✅ | 1.0.1 was found and staged by the running copy's periodic check |
 | Failed start rolls back | ☐ | step 3 |
 | Corrupted package refused | ☐ | step 3 |
@@ -102,10 +102,16 @@ decision for xPack, not something to work around here.
   platform, chosen by the machine that builds. Packaging for another platform
   from one machine would pick the wrong ones; the plugin cannot yet choose
   dependencies per target.
-- **The "new version ready" notice never appears.** The application asks for
-  it (`<notify>true</notify>`), but xPack's installer builder does not pack
-  the notice program, and only an installer can add it: every update is
-  applied silently at the next start. Seen on 1.0.0 → 1.0.1.
+- ~~**The "new version ready" notice never appears.**~~ Fixed in xPack
+  0.4.2: its installers carry the notice when the application asks for it.
+  Copies installed with an older installer keep updating silently until they
+  are reinstalled, since an update cannot add it.
+- **An installer for another architecture can be run over an installation.**
+  On Apple Silicon, the Intel (macos-x64) installer ran through Rosetta,
+  installed the Intel build into the existing arm64 installation and kept its
+  arm64 updater, which then refused every update ("package targets macos-x64
+  but this machine is macos-arm64"). Only uninstalling and installing the
+  arm64 build recovered it. Reported to xPack.
 - **Knowing when an uninstall has finished.** The uninstaller hands the work
   to a copy of itself and returns at once (on Windows it has to, so its own
   file can be deleted). A script cannot tell when the installation is gone

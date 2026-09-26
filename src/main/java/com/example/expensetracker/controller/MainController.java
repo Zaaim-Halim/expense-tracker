@@ -102,6 +102,12 @@ public final class MainController {
         scene.getAccelerators().put(Shortcuts.EXPENSES, () -> select(Section.EXPENSES));
         scene.getAccelerators().put(Shortcuts.CATEGORIES, () -> select(Section.CATEGORIES));
         scene.getAccelerators().put(Shortcuts.SETTINGS, () -> select(Section.SETTINGS));
+        scene.getAccelerators().put(Shortcuts.FIND, () -> {
+            select(Section.EXPENSES);
+            if (pages.get(Section.EXPENSES) instanceof ExpensesController expenses) {
+                expenses.focusSearch();
+            }
+        });
         scene.getAccelerators().put(Shortcuts.NEW_EXPENSE, () -> {
             if (ExpenseDialog.show(scene.getWindow(), service, null)) {
                 dataChanged();

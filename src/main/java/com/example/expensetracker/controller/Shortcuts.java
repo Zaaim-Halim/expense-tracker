@@ -20,6 +20,7 @@ final class Shortcuts {
     static final KeyCombination CATEGORIES = new KeyCodeCombination(KeyCode.DIGIT3, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination SETTINGS = new KeyCodeCombination(KeyCode.COMMA, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination NEW_EXPENSE = new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination FIND = new KeyCodeCombination(KeyCode.F, KeyCombination.SHORTCUT_DOWN);
 
     /** What each shortcut does, for the list in Settings. */
     record Entry(String keys, String action) {
@@ -31,6 +32,7 @@ final class Shortcuts {
     static List<Entry> all() {
         return List.of(
                 new Entry(NEW_EXPENSE.getDisplayText(), "New expense"),
+                new Entry(FIND.getDisplayText(), "Search expenses"),
                 new Entry(DASHBOARD.getDisplayText(), "Dashboard"),
                 new Entry(EXPENSES.getDisplayText(), "Expenses"),
                 new Entry(CATEGORIES.getDisplayText(), "Categories"),

@@ -20,6 +20,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -70,6 +71,46 @@ public final class ExpenseDialog {
         date.setConverter(new LocalDateStringConverter(Appearance.formats().dateFormatter(),
                 Appearance.formats().dateFormatter()));
         date.setPromptText(Appearance.formats().date(LocalDate.now()));
+        TextField tags = new TextField(existing == null ? "" : String.join(", ", existing.tags()));
+        tags.setPromptText("Optional, separated by commas: travel, work");
+        FlowPane suggestions = new FlowPane(6, 6);
+        suggestions.getStyleClass().add("tag-suggestions");
+        List<String> known;
+        try {
+            known = service.allTags();
+        } catch (SQLException e) {
+            known = List.of();
+        }
+        // The tags already in use, one click to add: no retyping, no near-duplicates.
+        for (String name : known) {
+            Button add = new Button(name);
+            add.setGraphic(Icons.of(Icons.ADD));
+            add.getStyleClass().add("tag-suggestion");
+            add.setOnAction(event -> {
+                List<String> current = new java.util.ArrayList<>(Expense.parseTags(tags.getText()));
+                current.add(name);
+                tags.setText(String.join(", ", Expense.parseTags(String.join(",", current))));
+                tags.positionCaret(tags.getText().length());
+            });
+            suggestions.getChildren().add(add);
+        }
+        // Only what the expense does not carry yet.
+        Runnable offer = () -> {
+            List<String> current = Expense.parseTags(tags.getText());
+            boolean any = false;
+            for (javafx.scene.Node node : suggestions.getChildren()) {
+                String name = ((Button) node).getText();
+                boolean offered = current.stream().noneMatch(name::equalsIgnoreCase);
+                node.setVisible(offered);
+                node.setManaged(offered);
+                any |= offered;
+            }
+            suggestions.setVisible(any);
+            suggestions.setManaged(any);
+        };
+        tags.textProperty().addListener((observable, before, now) -> offer.run());
+        offer.run();
+
         TextArea note = new TextArea(existing == null ? "" : existing.note());
         note.setPromptText("Optional");
         note.setPrefRowCount(3);
@@ -89,6 +130,7 @@ public final class ExpenseDialog {
                 field("Description", description),
                 amountAndCategory,
                 field("Date", date),
+                field("Tags", new VBox(8, tags, suggestions)),
                 field("Note", note),
                 error);
         form.getStyleClass().add("form");
@@ -112,7 +154,7 @@ public final class ExpenseDialog {
                 long cents = Money.parseCents(amount.getText());
                 saved[0] = service.save(new Expense(existing == null ? 0 : existing.id(),
                         description.getText(), cents, category.getValue(),
-                        date.getValue(), note.getText()));
+                        date.getValue(), note.getText(), Expense.parseTags(tags.getText())));
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);
@@ -136,7 +178,7 @@ public final class ExpenseDialog {
     }
 
     /** A category in a list: its colour, then its name. */
-    static final class CategoryListCell extends ListCell<Category> {
+    static class CategoryListCell extends ListCell<Category> {
         @Override
         protected void updateItem(Category category, boolean empty) {
             super.updateItem(category, empty);

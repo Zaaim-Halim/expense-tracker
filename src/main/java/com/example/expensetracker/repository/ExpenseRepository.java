@@ -10,7 +10,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Reads and writes expenses. */
 public final class ExpenseRepository {
@@ -32,8 +34,21 @@ public final class ExpenseRepository {
         try (Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery(
                         SELECT + " ORDER BY e.spent_on DESC, e.id DESC")) {
-            return readAll(rows);
+            return withTags(readAll(rows));
         }
+    }
+
+    /** Every tag some expense carries, alphabetically, ignoring case. */
+    public List<String> allTags() throws SQLException {
+        List<String> tags = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery(
+                        "SELECT name FROM tags ORDER BY name COLLATE NOCASE")) {
+            while (rows.next()) {
+                tags.add(rows.getString(1));
+            }
+        }
+        return tags;
     }
 
     /** The {@code limit} most recent expenses. */
@@ -42,40 +57,135 @@ public final class ExpenseRepository {
                 SELECT + " ORDER BY e.spent_on DESC, e.id DESC LIMIT ?")) {
             query.setInt(1, limit);
             try (ResultSet rows = query.executeQuery()) {
-                return readAll(rows);
+                return withTags(readAll(rows));
             }
         }
     }
 
+    /** Adds an expense and its tags, all or nothing. */
     public Expense insert(Expense expense) throws SQLException {
-        try (PreparedStatement insert = connection.prepareStatement("""
-                INSERT INTO expenses(description, amount_cents, category_id, spent_on, note)
-                VALUES (?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
-            bind(insert, expense);
-            insert.executeUpdate();
-            try (ResultSet keys = insert.getGeneratedKeys()) {
-                keys.next();
-                return expense.withId(keys.getLong(1));
+        return inTransaction(() -> {
+            Expense saved;
+            try (PreparedStatement insert = connection.prepareStatement("""
+                    INSERT INTO expenses(description, amount_cents, category_id, spent_on, note)
+                    VALUES (?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+                bind(insert, expense);
+                insert.executeUpdate();
+                try (ResultSet keys = insert.getGeneratedKeys()) {
+                    keys.next();
+                    saved = expense.withId(keys.getLong(1));
+                }
+            }
+            writeTags(saved);
+            return saved;
+        });
+    }
+
+    /** Changes an expense and replaces its tags, all or nothing. */
+    public void update(Expense expense) throws SQLException {
+        inTransaction(() -> {
+            try (PreparedStatement update = connection.prepareStatement("""
+                    UPDATE expenses
+                    SET description = ?, amount_cents = ?, category_id = ?, spent_on = ?, note = ?
+                    WHERE id = ?""")) {
+                bind(update, expense);
+                update.setLong(6, expense.id());
+                update.executeUpdate();
+            }
+            writeTags(expense);
+            return expense;
+        });
+    }
+
+    /** Removes an expense; the database removes its tag links with it. */
+    public void delete(long id) throws SQLException {
+        inTransaction(() -> {
+            try (PreparedStatement delete =
+                    connection.prepareStatement("DELETE FROM expenses WHERE id = ?")) {
+                delete.setLong(1, id);
+                delete.executeUpdate();
+            }
+            dropUnusedTags();
+            return null;
+        });
+    }
+
+    /**
+     * Replaces an expense's tags. A tag is matched by name ignoring case, so
+     * "Travel" on one expense and "travel" on another are the same tag, spelt
+     * as it was first saved.
+     */
+    private void writeTags(Expense expense) throws SQLException {
+        try (PreparedStatement clear =
+                connection.prepareStatement("DELETE FROM expense_tags WHERE expense_id = ?")) {
+            clear.setLong(1, expense.id());
+            clear.executeUpdate();
+        }
+        for (String tag : expense.tags()) {
+            try (PreparedStatement add =
+                    connection.prepareStatement("INSERT OR IGNORE INTO tags(name) VALUES (?)")) {
+                add.setString(1, tag);
+                add.executeUpdate();
+            }
+            try (PreparedStatement link = connection.prepareStatement("""
+                    INSERT OR IGNORE INTO expense_tags(expense_id, tag_id)
+                    SELECT ?, id FROM tags WHERE name = ?""")) {
+                link.setLong(1, expense.id());
+                link.setString(2, tag);
+                link.executeUpdate();
             }
         }
+        dropUnusedTags();
     }
 
-    public void update(Expense expense) throws SQLException {
-        try (PreparedStatement update = connection.prepareStatement("""
-                UPDATE expenses
-                SET description = ?, amount_cents = ?, category_id = ?, spent_on = ?, note = ?
-                WHERE id = ?""")) {
-            bind(update, expense);
-            update.setLong(6, expense.id());
-            update.executeUpdate();
+    /** A tag no expense carries any more is gone, from the filters too. */
+    private void dropUnusedTags() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM expense_tags)");
         }
     }
 
-    public void delete(long id) throws SQLException {
-        try (PreparedStatement delete =
-                connection.prepareStatement("DELETE FROM expenses WHERE id = ?")) {
-            delete.setLong(1, id);
-            delete.executeUpdate();
+    /** The expenses with their tags, read in one query. */
+    private List<Expense> withTags(List<Expense> expenses) throws SQLException {
+        if (expenses.isEmpty()) {
+            return expenses;
+        }
+        Map<Long, List<String>> tags = new HashMap<>();
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("""
+                        SELECT et.expense_id, t.name
+                        FROM expense_tags et JOIN tags t ON t.id = et.tag_id
+                        ORDER BY t.name COLLATE NOCASE""")) {
+            while (rows.next()) {
+                tags.computeIfAbsent(rows.getLong(1), id -> new ArrayList<>()).add(rows.getString(2));
+            }
+        }
+        List<Expense> tagged = new ArrayList<>(expenses.size());
+        for (Expense expense : expenses) {
+            tagged.add(new Expense(expense.id(), expense.description(), expense.amountCents(),
+                    expense.category(), expense.date(), expense.note(),
+                    tags.getOrDefault(expense.id(), List.of())));
+        }
+        return tagged;
+    }
+
+    private interface Work<T> {
+        T run() throws SQLException;
+    }
+
+    private <T> T inTransaction(Work<T> work) throws SQLException {
+        boolean autoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            T result = work.run();
+            connection.commit();
+            return result;
+        } catch (SQLException | RuntimeException e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(autoCommit);
         }
     }
 

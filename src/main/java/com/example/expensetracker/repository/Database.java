@@ -1,5 +1,6 @@
 package com.example.expensetracker.repository;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -12,15 +13,36 @@ import java.util.List;
 /**
  * The SQLite database file, and its schema.
  *
- * <p>The schema carries a version ({@code PRAGMA user_version}) and is brought
- * up to date when the file is opened, one step at a time. A later release that
- * changes the tables adds a step rather than editing an old one, so a
- * database created by any earlier version upgrades in place.
+ * <p>The schema is brought up to date when the file is opened, one step at a
+ * time. A later release that changes the tables adds a step rather than
+ * editing an old one, so a database created by any earlier version upgrades
+ * in place.
+ *
+ * <p>Two numbers describe a file, because an update can be rolled back:
+ * <ul>
+ *   <li>{@link #SCHEMA}, kept in the {@code meta} table: the tables the file
+ *       has. Schema 1 predates that table.</li>
+ *   <li>{@link #COMPATIBILITY}, kept in {@code PRAGMA user_version}: the
+ *       oldest schema whose code may still read and write the file. Every
+ *       release refuses a file above the level it knows, so this is the gate
+ *       an older version checks when it runs again after a rollback.</li>
+ * </ul>
+ *
+ * <p>A step that only adds (a new table, a column with a default, links the
+ * database itself keeps consistent) leaves the gate where it is: an older
+ * version opens the file, ignores what it does not know, and cannot break it.
+ * Only a step that older code could damage raises the gate.
  */
 public final class Database implements AutoCloseable {
 
-    /** The schema this build writes. */
-    public static final int SCHEMA_VERSION = 1;
+    /** The tables this build creates and understands. */
+    public static final int SCHEMA = 2;
+
+    /**
+     * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
+     * Schema 2 only added tags, which schema 1's code never looks at.
+     */
+    public static final int COMPATIBILITY = 1;
 
     /** The categories a new database starts with. */
     static final List<String[]> DEFAULT_CATEGORIES = List.of(
@@ -39,7 +61,13 @@ public final class Database implements AutoCloseable {
         this.connection = connection;
     }
 
-    /** Opens the database at {@code file}, creating or upgrading it as needed. */
+    /**
+     * Opens the database at {@code file}, creating or upgrading it as needed.
+     *
+     * <p>Before a file holding data is upgraded, a copy of it as it was is
+     * kept beside it ({@code expenses.db.schema-1.bak}). If that copy cannot
+     * be made, the file is left untouched and opening fails.
+     */
     public static Database open(Path file) throws SQLException {
         Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
         try {
@@ -47,7 +75,7 @@ public final class Database implements AutoCloseable {
                 statement.execute("PRAGMA foreign_keys = ON");
             }
             Database database = new Database(connection);
-            database.migrate();
+            database.migrate(file);
             return database;
         } catch (SQLException | RuntimeException e) {
             // Nobody else holds the connection to close it. Left open, it
@@ -66,28 +94,66 @@ public final class Database implements AutoCloseable {
         return connection;
     }
 
-    /** The schema version the file is at. */
+    /** The schema the file is at: the tables it has. 0 for a new, empty file. */
     public int schemaVersion() throws SQLException {
+        if (compatibility() == 0) {
+            return 0;
+        }
+        if (!hasTable("meta")) {
+            return 1;
+        }
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery("SELECT value FROM meta WHERE key = 'schema'")) {
+            return rows.next() ? Integer.parseInt(rows.getString(1)) : 1;
+        }
+    }
+
+    /** The oldest schema whose code may use the file ({@code PRAGMA user_version}). */
+    public int compatibility() throws SQLException {
         try (Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery("PRAGMA user_version")) {
             return rows.next() ? rows.getInt(1) : 0;
         }
     }
 
-    private void migrate() throws SQLException {
-        int version = schemaVersion();
-        if (version > SCHEMA_VERSION) {
-            // Written by a newer release. Changing it could lose what that
-            // release stored, so this one refuses rather than guessing.
+    private boolean hasTable(String name) throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+            query.setString(1, name);
+            try (ResultSet rows = query.executeQuery()) {
+                return rows.next();
+            }
+        }
+    }
+
+    private void migrate(Path file) throws SQLException {
+        int compatibility = compatibility();
+        if (compatibility > SCHEMA) {
+            // Written by a newer release that older code must not touch.
+            // Changing it could lose what that release stored, so this one
+            // refuses rather than guessing.
             throw new SQLException("the data was written by a newer version of Expense Tracker "
-                    + "(schema " + version + "); this version understands up to "
-                    + SCHEMA_VERSION);
+                    + "(it needs schema " + compatibility + "); this version understands up to "
+                    + SCHEMA);
+        }
+        int schema = schemaVersion();
+        // Already current, or a newer minor release added more and said this
+        // version may still use the file: nothing is changed, least of all
+        // lowered. This is also every start after the first.
+        if (schema >= SCHEMA) {
+            return;
+        }
+        if (schema >= 1) {
+            backUp(file, schema);
         }
         boolean autoCommit = connection.getAutoCommit();
         connection.setAutoCommit(false);
         try {
-            if (version < 1) {
+            if (schema < 1) {
                 createVersion1();
+            }
+            if (schema < 2) {
+                addTags();
             }
             connection.commit();
         } catch (SQLException e) {
@@ -95,6 +161,24 @@ public final class Database implements AutoCloseable {
             throw e;
         } finally {
             connection.setAutoCommit(autoCommit);
+        }
+    }
+
+    /**
+     * Keeps a copy of the file as it is, before it is changed. An existing
+     * copy is never replaced: it is the older of the two, from before an
+     * attempt that did not finish.
+     */
+    private void backUp(Path file, int schema) throws SQLException {
+        Path backup = file.toAbsolutePath().resolveSibling(file.getFileName() + ".schema-" + schema + ".bak");
+        if (Files.exists(backup)) {
+            return;
+        }
+        // Outside any transaction, which VACUUM INTO requires. It writes a
+        // complete, consistent copy of the open database.
+        try (PreparedStatement copy = connection.prepareStatement("VACUUM INTO ?")) {
+            copy.setString(1, backup.toString());
+            copy.execute();
         }
     }
 
@@ -126,6 +210,34 @@ public final class Database implements AutoCloseable {
                 insert.addBatch();
             }
             insert.executeBatch();
+        }
+    }
+
+    /**
+     * Schema 2: tags. Only added, so {@link #COMPATIBILITY} stays 1. Schema 1's
+     * code knows nothing of these tables, and deleting an expense there still
+     * removes its tags, because the database cascades the delete itself.
+     */
+    private void addTags() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE tags (
+                        id   INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE COLLATE NOCASE
+                    )""");
+            statement.execute("""
+                    CREATE TABLE expense_tags (
+                        expense_id INTEGER NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+                        tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                        PRIMARY KEY (expense_id, tag_id)
+                    )""");
+            statement.execute("CREATE INDEX expense_tags_by_tag ON expense_tags(tag_id)");
+            statement.execute("""
+                    CREATE TABLE meta (
+                        key   TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )""");
+            statement.execute("INSERT INTO meta(key, value) VALUES ('schema', '2')");
         }
     }
 

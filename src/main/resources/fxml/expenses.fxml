@@ -19,6 +19,7 @@
     <Button fx:id="deleteButton" text="Delete" styleClass="secondary, danger-text"/>
     <Button fx:id="newButton" text="New expense" styleClass="primary"/>
   </HBox>
+  <VBox fx:id="filterBar" styleClass="filter-bar" spacing="10"/>
   <VBox styleClass="card, table-card" VBox.vgrow="ALWAYS">
     <TableView fx:id="table" VBox.vgrow="ALWAYS">
       <columns>

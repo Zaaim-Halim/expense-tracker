@@ -12,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.zip.CRC32;
 import java.util.zip.DeflaterOutputStream;
 import javafx.application.Platform;
@@ -127,6 +128,17 @@ public final class Render {
                 Appearance.apply(popup.getRoot());
                 write(popup, directory.resolve("calendar-" + start.key() + ".png"));
             }
+            // Search and filters in use: words, a tag, and the extra filters open.
+            main.select(MainController.Section.EXPENSES);
+            ((TextField) scene.getRoot().lookup(".search-input")).setText("the");
+            ((ToggleButton) scene.getRoot().lookup(".filter-toggle")).setSelected(true);
+            write(scene, directory.resolve("expenses-filtered.png"));
+            ComboBox<?> tagFilter = (ComboBox<?>) scene.getRoot().lookupAll(".combo-box").stream()
+                    .filter(node -> ((ComboBox<?>) node).getPromptText().equals("All tags")).findFirst().orElseThrow();
+            popup(tagFilter::show, tagFilter::hide, directory.resolve("popup-tag-filter.png"));
+            ((TextField) scene.getRoot().lookup(".search-input")).setText("");
+            ((ToggleButton) scene.getRoot().lookup(".filter-toggle")).setSelected(false);
+
             // The real popups and alerts, in both themes: the category list
             // and the calendar of the expense dialog, a list in Settings, the
             // delete confirmation and an error.
@@ -309,8 +321,14 @@ public final class Render {
         for (Object[] row : rows) {
             int day = Math.min((Integer) row[3], today.getDayOfMonth());
             Category category = service.categoryNamed((String) row[2]);
+            List<String> tags = switch ((String) row[0]) {
+                case "Lunch with the team", "Taxi to the airport" -> List.of("work");
+                case "Cinema tickets" -> List.of("family", "weekend");
+                case "Farmers market" -> List.of("weekend");
+                default -> List.of();
+            };
             service.save(new Expense(0, (String) row[0], (Long) row[1], category,
-                    today.withDayOfMonth(day), ""));
+                    today.withDayOfMonth(day), "", tags));
         }
     }
 
