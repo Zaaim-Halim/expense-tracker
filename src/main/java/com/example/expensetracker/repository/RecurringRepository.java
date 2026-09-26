@@ -97,10 +97,35 @@ public final class RecurringRepository {
      */
     public Transaction recordOccurrence(Recurring rule, Transaction transaction) throws SQLException {
         return inTransaction(() -> {
-            if (!advance(rule)) {
+            if (!advance(rule, 1)) {
                 return null;
             }
             return transactions.insertLinked(transaction, rule.id());
+        });
+    }
+
+    /**
+     * Records occurrences {@code rule.done()} onwards, one per transaction in
+     * order, and counts them on the rule, all in one change. One commit for a
+     * rule's whole catch-up rather than one each: every commit waits for the
+     * disk, which on Windows takes long enough that hundreds would freeze the
+     * window.
+     *
+     * @return how many were recorded: all of them, or none when the rule has
+     *     moved on already
+     */
+    public int recordOccurrences(Recurring rule, List<Transaction> occurrences) throws SQLException {
+        if (occurrences.isEmpty()) {
+            return 0;
+        }
+        return inTransaction(() -> {
+            if (!advance(rule, occurrences.size())) {
+                return 0;
+            }
+            for (Transaction occurrence : occurrences) {
+                transactions.insertLinked(occurrence, rule.id());
+            }
+            return occurrences.size();
         });
     }
 
@@ -111,15 +136,16 @@ public final class RecurringRepository {
      * @return whether it was still the one to deal with
      */
     public boolean skipOccurrence(Recurring rule) throws SQLException {
-        return inTransaction(() -> advance(rule));
+        return inTransaction(() -> advance(rule, 1));
     }
 
-    /** Moves the count on by one, only from where the caller read it. */
-    private boolean advance(Recurring rule) throws SQLException {
+    /** Moves the count on by {@code by}, only from where the caller read it. */
+    private boolean advance(Recurring rule, int by) throws SQLException {
         try (PreparedStatement update =
-                connection.prepareStatement("UPDATE recurring SET done = done + 1 WHERE id = ? AND done = ?")) {
-            update.setLong(1, rule.id());
-            update.setInt(2, rule.done());
+                connection.prepareStatement("UPDATE recurring SET done = done + ? WHERE id = ? AND done = ?")) {
+            update.setInt(1, by);
+            update.setLong(2, rule.id());
+            update.setInt(3, rule.done());
             return update.executeUpdate() == 1;
         }
     }

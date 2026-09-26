@@ -61,7 +61,7 @@ What has been proven, by which check. `validate-install.sh` is
 | Interrupted download recovered | ☐ | step 3 |
 | Not enough disk space refused | ☐ | step 3 |
 | Runtime change through an update | ◐ | 2.2.1 → 2.3.0 on the owner's Mac, the runtime gaining `java.net.http` and `jdk.crypto.ec`: a 25 328 570-byte delta, 9 of 134 files new and 125 reused, staged by the running copy. Not yet confirmed applied and healthy |
-| Start-up work within the health timeout | ✅ | 2.4.0 records due recurring transactions only after reporting its start; 500 due items record in 289 ms |
+| Start-up work within the health timeout | ✅ | 2.4.0 records due recurring transactions only after reporting its start. One commit per occurrence took 13.7 s for 500 on the Windows runner (0.2 s on macOS): each commit waits for the disk. One commit per rule's catch-up: 34 ms on macOS |
 | Cross-platform packages | ☐ | step 5 |
 
 ## Plan

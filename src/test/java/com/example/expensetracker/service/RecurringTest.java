@@ -12,6 +12,7 @@ import com.example.expensetracker.model.ExchangeRate;
 import com.example.expensetracker.model.Recurring;
 import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.Database;
+import com.example.expensetracker.repository.RecurringRepository;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -88,6 +89,17 @@ class RecurringTest {
         assertThrows(IllegalArgumentException.class, () -> service.record(due, null), "recorded twice");
         assertThrows(IllegalArgumentException.class, () -> service.skip(due));
         assertEquals(1, service.transactionCount());
+    }
+
+    @Test
+    void a_catch_up_read_before_another_start_recorded_records_none_of_it() throws SQLException {
+        Recurring stale = rule("Rent", Recurring.Frequency.MONTH, 1, JAN_31, false);
+        assertEquals(3, service.recordDue(LocalDate.of(2026, 3, 31)).recorded());
+        RecurringRepository repository = new RecurringRepository(database);
+        List<Transaction> again = List.of(stale.toTransaction(JAN_31), stale.withDone(1).toTransaction(stale.occurrence(1)));
+        assertEquals(0, repository.recordOccurrences(stale, again), "recorded twice");
+        assertEquals(3, service.transactionCount());
+        assertEquals(3, service.allRecurring().get(0).done());
     }
 
     @Test
@@ -211,6 +223,6 @@ class RecurringTest {
         assertEquals(500, service.recordDue(LocalDate.of(2026, 12, 31)).recorded());
         long millis = (System.nanoTime() - started) / 1_000_000;
         System.out.println("recorded 500 due items in " + millis + " ms");
-        assertTrue(millis < 10_000, millis + " ms");
+        assertTrue(millis < 5_000, millis + " ms");
     }
 }

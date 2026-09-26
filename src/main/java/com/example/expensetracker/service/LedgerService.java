@@ -959,10 +959,10 @@ public final class LedgerService {
     /**
      * Records every occurrence that has fallen due by {@code today}, for rules
      * that do not ask first and are not paused, at most
-     * {@link #CATCH_UP_LIMIT} per rule. Each is recorded and counted on its
-     * rule in one change, so none is ever recorded twice. One that cannot be
-     * recorded (in another currency, with no rate for its day) stops its rule
-     * there and waits for the user.
+     * {@link #CATCH_UP_LIMIT} per rule. A rule's occurrences are recorded and
+     * counted on it in one change, so none is ever recorded twice. One that
+     * cannot be recorded (in another currency, with no rate for its day) stops
+     * its rule there and waits for the user.
      */
     public Catch recordDue(LocalDate today) throws SQLException {
         int recorded = 0;
@@ -971,8 +971,10 @@ public final class LedgerService {
             if (rule.paused()) {
                 continue;
             }
-            Recurring current = rule;
+            List<Transaction> due = new ArrayList<>();
+            int waitingBefore = waiting.size();
             for (int n = 0; n < CATCH_UP_LIMIT; n++) {
+                Recurring current = rule.withDone(rule.done() + n);
                 LocalDate day = current.nextDue();
                 if (day == null || day.isAfter(today)) {
                     break;
@@ -981,19 +983,19 @@ public final class LedgerService {
                     waiting.add(new Due(current, day, null));
                     break;
                 }
-                Transaction valid;
                 try {
-                    valid = validate(current.toTransaction(day));
+                    due.add(validate(current.toTransaction(day)));
                 } catch (IllegalArgumentException e) {
                     waiting.add(new Due(current, day, e.getMessage()));
                     break;
                 }
-                if (recurring.recordOccurrence(current, valid) == null) {
-                    break;
-                }
-                recorded++;
-                current = current.withDone(current.done() + 1);
             }
+            int done = recurring.recordOccurrences(rule, due);
+            if (done == 0 && !due.isEmpty()) {
+                // Another run got there first: what waits is its to say.
+                waiting.subList(waitingBefore, waiting.size()).clear();
+            }
+            recorded += done;
         }
         return new Catch(recorded, waiting);
     }
