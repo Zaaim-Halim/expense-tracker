@@ -55,6 +55,39 @@ public final class Database implements AutoCloseable {
             new String[] {"Shopping", "#eab308"},
             new String[] {"Other", "#64748b"});
 
+    /** Data this version must not touch: a newer version said so. */
+    public static final class NewerDataException extends SQLException {
+        private static final long serialVersionUID = 1L;
+        private final int needs;
+
+        NewerDataException(int needs) {
+            super("the data was written by a newer version of Expense Tracker "
+                    + "(it needs schema " + needs + "); this version understands up to " + SCHEMA);
+            this.needs = needs;
+        }
+
+        /** The schema the data needs its reader to understand. */
+        public int needs() {
+            return needs;
+        }
+    }
+
+    /**
+     * What a database file is, read without changing it.
+     *
+     * @param intact        SQLite's own consistency check passed
+     * @param compatibility the gate ({@code user_version})
+     * @param schema        the tables it has
+     * @param expenses      how many expenses it holds, or -1 if it has no expenses table
+     */
+    public record FileInfo(boolean intact, int compatibility, int schema, int expenses) {
+
+        /** Whether this version can use the file: whole, with its tables, and not too new. */
+        public boolean usable() {
+            return intact && expenses >= 0 && compatibility >= 1 && compatibility <= SCHEMA;
+        }
+    }
+
     private final Connection connection;
 
     private Database(Connection connection) {
@@ -87,6 +120,56 @@ public final class Database implements AutoCloseable {
                 e.addSuppressed(closing);
             }
             throw e;
+        }
+    }
+
+    /**
+     * Looks at a database file without changing it: opened read-only, so
+     * looking at a backup can never alter it. A file that is not a database
+     * at all reads as not intact.
+     */
+    public static FileInfo inspect(Path file) {
+        if (!Files.isRegularFile(file)) {
+            return new FileInfo(false, 0, 0, -1);
+        }
+        org.sqlite.SQLiteConfig config = new org.sqlite.SQLiteConfig();
+        config.setReadOnly(true);
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + file.toAbsolutePath(), config.toProperties())) {
+            Database database = new Database(connection);
+            boolean intact;
+            try (Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("PRAGMA quick_check")) {
+                intact = rows.next() && "ok".equals(rows.getString(1));
+            }
+            int expenses = -1;
+            if (database.hasTable("expenses")) {
+                try (Statement statement = connection.createStatement();
+                        ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM expenses")) {
+                    rows.next();
+                    expenses = rows.getInt(1);
+                }
+            }
+            return new FileInfo(intact, database.compatibility(), database.schemaVersion(), expenses);
+        } catch (SQLException | RuntimeException e) {
+            return new FileInfo(false, 0, 0, -1);
+        }
+    }
+
+    /**
+     * Writes a complete, consistent copy of the database file {@code source}
+     * to {@code target}, which must not exist yet. The source is opened
+     * read-only, so this works on any file SQLite can read, including one
+     * this version would refuse to open.
+     */
+    public static void copy(Path source, Path target) throws SQLException {
+        org.sqlite.SQLiteConfig config = new org.sqlite.SQLiteConfig();
+        config.setReadOnly(true);
+        try (Connection connection = DriverManager.getConnection(
+                        "jdbc:sqlite:" + source.toAbsolutePath(), config.toProperties());
+                PreparedStatement copy = connection.prepareStatement("VACUUM INTO ?")) {
+            copy.setString(1, target.toAbsolutePath().toString());
+            copy.execute();
         }
     }
 
@@ -132,9 +215,7 @@ public final class Database implements AutoCloseable {
             // Written by a newer release that older code must not touch.
             // Changing it could lose what that release stored, so this one
             // refuses rather than guessing.
-            throw new SQLException("the data was written by a newer version of Expense Tracker "
-                    + "(it needs schema " + compatibility + "); this version understands up to "
-                    + SCHEMA);
+            throw new NewerDataException(compatibility);
         }
         int schema = schemaVersion();
         // Already current, or a newer minor release added more and said this

@@ -16,7 +16,7 @@ import javafx.scene.shape.Circle;
 import javafx.stage.Window;
 
 /** Small pieces every page uses. */
-final class Ui {
+public final class Ui {
 
     private Ui() {
     }
@@ -56,7 +56,7 @@ final class Ui {
     }
 
         /** Tells the user something went wrong, in words they can act on. */
-    static void error(Window owner, String header, String message) {
+    public static void error(Window owner, String header, String message) {
         errorAlert(owner, header, message).showAndWait();
     }
 
@@ -76,13 +76,27 @@ final class Ui {
     }
 
     static Alert confirmation(Window owner, String header, String message, String action) {
+        return confirmation(owner, header, message, action, "danger");
+    }
+
+    /** A confirmation whose action button is styled {@code actionStyle}: "danger" or "primary". */
+    static Alert confirmation(Window owner, String header, String message, String action, String actionStyle) {
         ButtonType yes = new ButtonType(action, ButtonBar.ButtonData.OK_DONE);
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message, yes, ButtonType.CANCEL);
         style(alert, owner);
         alert.setHeaderText(header);
-        alert.getDialogPane().lookupButton(yes).getStyleClass().add("danger");
+        alert.getDialogPane().lookupButton(yes).getStyleClass().add(actionStyle);
         icons(alert);
         return alert;
+    }
+
+    /** Asks before a step that is not destructive but matters, such as a restore. */
+    static boolean confirmPrimary(Window owner, String header, String message, String action, String icon) {
+        Alert alert = confirmation(owner, header, message, action, "primary");
+        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(alert.getButtonTypes().get(0)))
+                .setGraphic(Icons.of(icon));
+        Optional<ButtonType> answer = alert.showAndWait();
+        return answer.isPresent() && answer.get().getButtonData() == ButtonBar.ButtonData.OK_DONE;
     }
 
     /**

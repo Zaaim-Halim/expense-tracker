@@ -1256,3 +1256,30 @@
     -fx-min-height: 36;
     -fx-pref-height: 36;
 }
+
+/* --- data and backups ---------------------------------------------------- */
+
+.path {
+    -fx-font-family: "Menlo", "Consolas", "Monospaced";
+    -fx-font-size: 12px;
+    -fx-text-fill: -text-2;
+    -fx-background-color: -chip;
+    -fx-background-radius: 6;
+    -fx-padding: 5 9 5 9;
+}
+
+.backup-list {
+    -fx-border-color: -border;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 4 12 4 12;
+}
+
+.backup-row {
+    -fx-padding: 10 0 10 0;
+    -fx-border-color: transparent transparent -track transparent;
+}
+
+.backup-row:last-child {
+    -fx-border-color: transparent;
+}

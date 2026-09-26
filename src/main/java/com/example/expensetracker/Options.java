@@ -19,7 +19,7 @@ public record Options(Path dataDir, Command command, List<String> arguments) {
 
     /** What was asked for. */
     public enum Command {
-        WINDOW, VERSION, HELP, STATUS, ADD, RENDER
+        WINDOW, VERSION, HELP, STATUS, ADD, BACKUP, RENDER
     }
 
     public static final String USAGE = """
@@ -31,6 +31,7 @@ public record Options(Path dataDir, Command command, List<String> arguments) {
               --version                         print the version and exit
               --status                          print where the data is and what it holds
               --add DESCRIPTION AMOUNT CATEGORY add an expense dated today
+              --backup                          copy the data into the backup folder now
               --help                            show this help
 
             Options:
@@ -60,6 +61,7 @@ public record Options(Path dataDir, Command command, List<String> arguments) {
                     case "--help" -> Command.HELP;
                     case "--status" -> Command.STATUS;
                     case "--add" -> Command.ADD;
+                    case "--backup" -> Command.BACKUP;
                     default -> throw new IllegalArgumentException("unknown option " + arg);
                 });
             } else if (command == Command.ADD) {

@@ -1,7 +1,11 @@
 package com.example.expensetracker;
 
 import com.example.expensetracker.controller.Appearance;
+import com.example.expensetracker.controller.Data;
 import com.example.expensetracker.controller.MainController;
+import com.example.expensetracker.controller.RecoveryDialog;
+import com.example.expensetracker.controller.Ui;
+import com.example.expensetracker.data.DataStore;
 import com.example.expensetracker.controller.Render;
 import com.example.expensetracker.repository.Database;
 import com.example.expensetracker.service.ExpenseService;
@@ -25,7 +29,7 @@ public final class ExpenseTrackerApp extends Application {
     /** Handed over from {@link Main}; JavaFX constructs this class itself. */
     private static AppPaths paths;
 
-    private Database database;
+    private DataStore store;
 
     /** Opens the window and returns when it is closed. */
     static void start(AppPaths appPaths) {
@@ -40,27 +44,32 @@ public final class ExpenseTrackerApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        try {
-            paths.create();
-            database = Database.open(paths.database());
-        } catch (IOException | SQLException e) {
-            Alert alert = new Alert(Alert.AlertType.ERROR,
-                    "Expense Tracker could not open its data in " + paths.dataDir() + ".\n\n"
-                            + e.getMessage());
-            alert.setHeaderText("Your expenses could not be opened");
-            alert.showAndWait();
-            Platform.exit();
-            return;
-        }
-
-        // Never fails: a bad settings file means the defaults, so the window
-        // always opens and reports its start.
+        // Settings first, never failing: every dialog from here on, even one
+        // about the data, is drawn in the user's theme.
         SettingsStore settings = SettingsStore.load(paths.settings());
         settings.problem().ifPresent(problem -> System.err.println("expense-tracker: " + problem));
         Appearance.load(settings);
         Appearance.readSystemTheme();
 
-        Scene scene = createScene(new ExpenseService(database));
+        Path backups = paths.backups(settings.settings().backupFolder());
+        try {
+            paths.create();
+            store = DataStore.open(paths.database(), backups);
+        } catch (Database.NewerDataException e) {
+            store = recover(backups);
+            if (store == null) {
+                Platform.exit();
+                return;
+            }
+        } catch (IOException | SQLException e) {
+            Ui.error(null, "Your expenses could not be opened",
+                    "Expense Tracker could not open its data in " + paths.dataDir() + ".\n\n" + e.getMessage());
+            Platform.exit();
+            return;
+        }
+        Data.use(store, paths, getHostServices());
+
+        Scene scene = createScene(store.service());
         stage.setTitle(AppInfo.NAME);
         for (int size : new int[] {32, 64, 128, 256}) {
             stage.getIcons().add(new javafx.scene.image.Image(
@@ -80,12 +89,46 @@ public final class ExpenseTrackerApp extends Application {
         stage.show();
         // The window is up: tell xPack this version works.
         Platform.runLater(HealthReport::started);
+        // The day's backup, after the start is reported so it can never delay
+        // it, and on the data worker so it never runs beside a restore.
+        if (settings.settings().automaticBackups()) {
+            Data.run(store::backUpIfDue, made -> { }, e -> System.err.println(
+                    "expense-tracker: the automatic backup failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Data a newer version wrote: offer the newest backup this version can
+     * read. This version works; what to do with the data is the user's
+     * decision, so the start is reported to xPack before asking, and a
+     * rollback is never triggered by someone reading a dialog.
+     *
+     * @return the data, restored, or null when the user chose to quit
+     */
+    private DataStore recover(Path backups) {
+        HealthReport.started();
+        DataStore closed = DataStore.closed(paths.database(), backups);
+        java.util.Optional<com.example.expensetracker.data.Backup> usable = RecoveryDialog.newestUsable(closed);
+        java.util.Optional<javafx.scene.control.ButtonType> answer =
+                RecoveryDialog.create(usable, paths.dataDir().toString()).showAndWait();
+        if (usable.isEmpty() || answer.isEmpty()
+                || answer.get().getButtonData() != javafx.scene.control.ButtonBar.ButtonData.OK_DONE) {
+            return null;
+        }
+        try {
+            closed.restore(usable.get());
+            return closed;
+        } catch (IOException | SQLException e) {
+            Ui.error(null, "The backup could not be restored",
+                    e.getMessage() + "\n\nNothing was changed; your data is in " + paths.dataDir());
+            return null;
+        }
     }
 
     @Override
     public void stop() throws SQLException {
-        if (database != null) {
-            database.close();
+        if (store != null) {
+            store.close();
         }
     }
 
@@ -100,6 +143,7 @@ public final class ExpenseTrackerApp extends Application {
         }
         MainController controller = loader.getController();
         controller.setup(service);
+        Data.onReplaced(() -> controller.replaceService(Data.store().service()));
         Scene scene = new Scene(root, 1180, 760);
         scene.getStylesheets().add(stylesheet());
         Appearance.apply(root);

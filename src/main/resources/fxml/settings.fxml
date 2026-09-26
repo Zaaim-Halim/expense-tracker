@@ -27,6 +27,11 @@
     </VBox>
 
     <VBox styleClass="card" spacing="4">
+      <Label text="Data and backups" styleClass="card-title"/>
+      <VBox fx:id="dataRows" spacing="0"/>
+    </VBox>
+
+    <VBox styleClass="card" spacing="4">
       <Label text="Keyboard shortcuts" styleClass="card-title"/>
       <GridPane fx:id="shortcutGrid" styleClass="shortcut-grid" hgap="24" vgap="10"/>
     </VBox>

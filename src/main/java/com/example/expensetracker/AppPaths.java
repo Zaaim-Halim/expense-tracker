@@ -59,6 +59,31 @@ public record AppPaths(Path dataDir) {
         return dataDir.resolve("settings.properties");
     }
 
+    /** Where backups go unless the user chose another folder. */
+    public Path defaultBackups() {
+        return dataDir.resolve("backups");
+    }
+
+    /** The backup folder a setting names, or the default one when it names none. */
+    public Path backups(String chosen) {
+        return chosen == null || chosen.isBlank() ? defaultBackups() : Path.of(chosen).toAbsolutePath().normalize();
+    }
+
+    /**
+     * Why {@code folder} cannot hold backups, or null when it can. A folder
+     * inside the application's installation is refused: uninstalling or
+     * updating the application may delete it, and the backups with it.
+     */
+    public static String unsuitableForBackups(Path folder, String installation) {
+        if (installation == null || installation.isBlank()) {
+            return null;
+        }
+        Path inside = Path.of(installation).toAbsolutePath().normalize();
+        return folder.toAbsolutePath().normalize().startsWith(inside)
+                ? "That folder is inside Expense Tracker's own installation, which an uninstall deletes."
+                : null;
+    }
+
     /** Creates the data directory if it does not exist yet. */
     public void create() throws IOException {
         Files.createDirectories(dataDir);

@@ -100,4 +100,17 @@ class SettingsStoreTest {
             assertEquals(1, files.count());
         }
     }
+
+    @Test
+    void backup_choices_are_kept_and_default_to_automatic_in_the_usual_folder() throws IOException {
+        assertTrue(SettingsStore.load(file()).settings().automaticBackups());
+        assertEquals(null, SettingsStore.load(file()).settings().backupFolder());
+
+        Settings chosen = Settings.DEFAULTS.withAutomaticBackups(false).withBackupFolder("/Volumes/Backup/Expenses");
+        SettingsStore.load(file()).save(chosen);
+        assertEquals(chosen, SettingsStore.load(file()).settings());
+
+        SettingsStore.load(file()).save(chosen.withBackupFolder(" "));
+        assertEquals(null, read().getProperty("backup.folder"), "clearing the folder did not remove it");
+    }
 }

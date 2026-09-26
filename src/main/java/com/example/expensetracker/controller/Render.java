@@ -74,6 +74,12 @@ public final class Render {
             ExpenseService emptyService = new ExpenseService(empty);
             ExpenseService service = new ExpenseService(filled);
             seed(service);
+            // Backups of the sample data, for the Data section of Settings.
+            com.example.expensetracker.data.DataStore samples = com.example.expensetracker.data.DataStore.open(
+                    scratch.resolve("sample.db"), scratch.resolve("backups"));
+            samples.backUp(com.example.expensetracker.data.Backup.Kind.AUTOMATIC);
+            samples.backUp(com.example.expensetracker.data.Backup.Kind.MANUAL);
+            Data.use(samples, new com.example.expensetracker.AppPaths(scratch), null);
 
             // Fixed settings, so the pictures do not depend on this machine's.
             Settings light = Settings.DEFAULTS.withTheme(Settings.Theme.LIGHT);
@@ -138,6 +144,34 @@ public final class Render {
             popup(tagFilter::show, tagFilter::hide, directory.resolve("popup-tag-filter.png"));
             ((TextField) scene.getRoot().lookup(".search-input")).setText("");
             ((ToggleButton) scene.getRoot().lookup(".filter-toggle")).setSelected(false);
+
+            // Settings, scrolled down to Data and backups, in both themes.
+            for (boolean dark : new boolean[] {false, true}) {
+                Appearance.change(light.withTheme(dark ? Settings.Theme.DARK : Settings.Theme.LIGHT));
+                main.select(MainController.Section.SETTINGS);
+                scene.getRoot().applyCss();
+                scene.getRoot().layout();
+                // Scrolled so the Data and backups card starts at the top.
+                javafx.scene.control.ScrollPane scroll =
+                        (javafx.scene.control.ScrollPane) scene.getRoot().lookup(".page-scroll");
+                javafx.scene.Node card = scene.getRoot().lookupAll(".card").stream()
+                        .filter(node -> node.lookup(".backup-list") != null).findFirst().orElseThrow();
+                double content = scroll.getContent().getLayoutBounds().getHeight();
+                double viewport = scroll.getViewportBounds().getHeight();
+                scroll.setVvalue(Math.min(1, (card.getBoundsInParent().getMinY() - 20) / (content - viewport)));
+                write(scene, directory.resolve(dark ? "settings-data-dark.png" : "settings-data.png"));
+                ((javafx.scene.control.ScrollPane) scene.getRoot().lookup(".page-scroll")).setVvalue(0);
+            }
+            Appearance.change(light);
+            dialog(Ui.confirmation(stage, "Restore the backup of Sep 26, 2026, 12:40:00?",
+                    "Your data goes back to how it was then. What you have now is kept as a backup first "
+                            + "(\"Before a restore\"), so you can go back to it.", "Restore", "primary"),
+                    directory.resolve("alert-restore.png"));
+            com.example.expensetracker.data.Backup newest = samples.list().get(0);
+            dialog(RecoveryDialog.create(java.util.Optional.of(newest), "~/Library/Application Support/Expense Tracker"),
+                    directory.resolve("recovery.png"));
+            dialog(RecoveryDialog.create(java.util.Optional.empty(), "~/Library/Application Support/Expense Tracker"),
+                    directory.resolve("recovery-no-backup.png"));
 
             // The real popups and alerts, in both themes: the category list
             // and the calendar of the expense dialog, a list in Settings, the

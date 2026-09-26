@@ -33,6 +33,8 @@ public final class SettingsStore {
     static final String DATE_FORMAT = "date.format";
     static final String NUMBER_FORMAT = "number.format";
     static final String WEEK_START = "week.start";
+    static final String AUTOMATIC_BACKUPS = "backup.automatic";
+    static final String BACKUP_FOLDER = "backup.folder";
 
     private final Path file;
     /** Everything the file held, including keys this version does not know. */
@@ -89,6 +91,12 @@ public final class SettingsStore {
         next.setProperty(DATE_FORMAT, changed.dateStyle().key());
         next.setProperty(NUMBER_FORMAT, changed.numberStyle().key());
         next.setProperty(WEEK_START, changed.weekStart().key());
+        next.setProperty(AUTOMATIC_BACKUPS, Boolean.toString(changed.automaticBackups()));
+        if (changed.backupFolder() == null) {
+            next.remove(BACKUP_FOLDER);
+        } else {
+            next.setProperty(BACKUP_FOLDER, changed.backupFolder());
+        }
 
         Files.createDirectories(file.getParent());
         Path temporary = Files.createTempFile(file.getParent(), "settings", ".tmp");
@@ -117,7 +125,9 @@ public final class SettingsStore {
                 choice(stored, ACCENT, Settings.Accent.values(), defaults.accent()),
                 choice(stored, DATE_FORMAT, Settings.DateStyle.values(), defaults.dateStyle()),
                 choice(stored, NUMBER_FORMAT, Settings.NumberStyle.values(), defaults.numberStyle()),
-                choice(stored, WEEK_START, Settings.WeekStart.values(), defaults.weekStart()));
+                choice(stored, WEEK_START, Settings.WeekStart.values(), defaults.weekStart()),
+                !"false".equals(stored.getProperty(AUTOMATIC_BACKUPS, "").strip()),
+                null).withBackupFolder(stored.getProperty(BACKUP_FOLDER));
     }
 
     private static <T extends Settings.Choice> T choice(Properties stored, String key, T[] values,

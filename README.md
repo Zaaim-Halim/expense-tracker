@@ -39,6 +39,11 @@ application. Why it exists, what it proves so far and what comes next are in
   elsewhere), listed in Settings: N for a new expense, F to search, 1–3 for
   the pages, comma for Settings; Enter edits and Delete removes the selected
   row.
+- **Backups:** made automatically once a day (the latest 10 are kept) and
+  whenever you ask, in a folder of your choosing; any of them restored in a
+  click, with your current data kept as a backup first so a restore can be
+  undone. If a newer version left data this one cannot read, it offers the
+  latest backup it can read instead of only refusing.
 - **Your data stays yours:** everything is in one SQLite file outside the
   installation, so updating or uninstalling the application never touches it.
 
@@ -56,6 +61,9 @@ are exact.
 `--data-dir=DIR` keeps it somewhere else. Settings are in
 `settings.properties` in the same directory.
 
+Backups go to `backups/` in the same directory unless Settings names another
+folder (never one inside the installation, which an uninstall deletes).
+
 When a new version changes how the data is stored, it first keeps a copy of
 the file as it was, beside it: `expenses.db.schema-1.bak` before the upgrade
 to schema 2. A change that only adds (as schema 2 did, for tags) leaves the
@@ -72,6 +80,7 @@ With no command, opens the application.
   --version                         print the version and exit
   --status                          print where the data is and what it holds
   --add DESCRIPTION AMOUNT CATEGORY add an expense dated today
+  --backup                          copy the data into the backup folder now
   --help                            show this help
 ```
 
@@ -200,6 +209,7 @@ src/main/java/com/example/expensetracker/
   repository/               SQLite: schema, versioned migrations, queries
   service/                  the rules, money, monthly summaries
   settings/                 the settings file, formats, the system's theme
+  data/                     the data file and its backups: back up, restore, recover
   controller/               pages, dialogs, icons, the screen renderer
 src/main/resources/
   fxml/                     the window and its pages

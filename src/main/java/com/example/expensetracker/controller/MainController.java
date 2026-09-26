@@ -93,6 +93,19 @@ public final class MainController {
     }
 
     /**
+     * Rebuilds every page on {@code replacement}, after a restore put other
+     * data under the window. The page on screen stays on screen.
+     */
+    public void replaceService(ExpenseService replacement) {
+        this.service = replacement;
+        roots.clear();
+        pages.clear();
+        Section current = shown == null ? Section.DASHBOARD : shown;
+        shown = null;
+        show(current);
+    }
+
+    /**
      * The window's keyboard shortcuts. They belong to the main window only, so
      * none fires while a dialog is open, and none is a plain key, so none
      * fires while the user types.

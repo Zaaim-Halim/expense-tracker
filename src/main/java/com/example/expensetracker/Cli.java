@@ -37,6 +37,7 @@ final class Cli {
                 }
                 case STATUS -> status(paths, out);
                 case ADD -> add(options, paths, out);
+                case BACKUP -> backup(paths, out);
                 default -> throw new IllegalStateException(options.command() + " is not a command");
             };
             if (code == 0) {
@@ -66,6 +67,20 @@ final class Cli {
             out.println("xpack.application.dir=" + (launchedFrom == null ? "" : launchedFrom));
             out.println("expenses=" + countAndTotal[0]);
             out.println("total=" + Money.format(countAndTotal[1], Locale.ROOT));
+        }
+        return 0;
+    }
+
+    /** A backup made now, into the folder Settings names; prints where it went. */
+    private static int backup(AppPaths paths, PrintStream out) throws IOException, SQLException {
+        paths.create();
+        String chosen = com.example.expensetracker.settings.SettingsStore.load(paths.settings())
+                .settings().backupFolder();
+        try (com.example.expensetracker.data.DataStore store = com.example.expensetracker.data.DataStore.open(
+                paths.database(), paths.backups(chosen))) {
+            com.example.expensetracker.data.Backup backup =
+                    store.backUp(com.example.expensetracker.data.Backup.Kind.MANUAL);
+            out.println("backup=" + backup.file());
         }
         return 0;
     }

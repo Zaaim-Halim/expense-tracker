@@ -10,29 +10,44 @@ import java.util.Locale;
  * falls back to the default for that choice alone.
  */
 public record Settings(Theme theme, Accent accent, DateStyle dateStyle, NumberStyle numberStyle,
-        WeekStart weekStart) {
+        WeekStart weekStart, boolean automaticBackups, String backupFolder) {
 
+    /**
+     * The defaults. Backups are automatic unless turned off, and go to the
+     * {@code backups} folder beside the data unless another is chosen
+     * ({@code backupFolder} null or empty).
+     */
     public static final Settings DEFAULTS = new Settings(Theme.SYSTEM, Accent.INDIGO,
-            DateStyle.SYSTEM, NumberStyle.SYSTEM, WeekStart.SYSTEM);
+            DateStyle.SYSTEM, NumberStyle.SYSTEM, WeekStart.SYSTEM, true, null);
 
     public Settings withTheme(Theme value) {
-        return new Settings(value, accent, dateStyle, numberStyle, weekStart);
+        return new Settings(value, accent, dateStyle, numberStyle, weekStart, automaticBackups, backupFolder);
     }
 
     public Settings withAccent(Accent value) {
-        return new Settings(theme, value, dateStyle, numberStyle, weekStart);
+        return new Settings(theme, value, dateStyle, numberStyle, weekStart, automaticBackups, backupFolder);
     }
 
     public Settings withDateStyle(DateStyle value) {
-        return new Settings(theme, accent, value, numberStyle, weekStart);
+        return new Settings(theme, accent, value, numberStyle, weekStart, automaticBackups, backupFolder);
     }
 
     public Settings withNumberStyle(NumberStyle value) {
-        return new Settings(theme, accent, dateStyle, value, weekStart);
+        return new Settings(theme, accent, dateStyle, value, weekStart, automaticBackups, backupFolder);
     }
 
     public Settings withWeekStart(WeekStart value) {
-        return new Settings(theme, accent, dateStyle, numberStyle, value);
+        return new Settings(theme, accent, dateStyle, numberStyle, value, automaticBackups, backupFolder);
+    }
+
+    public Settings withAutomaticBackups(boolean value) {
+        return new Settings(theme, accent, dateStyle, numberStyle, weekStart, value, backupFolder);
+    }
+
+    /** A folder of the user's choosing, or null for the default one. */
+    public Settings withBackupFolder(String value) {
+        String folder = value == null || value.isBlank() ? null : value.strip();
+        return new Settings(theme, accent, dateStyle, numberStyle, weekStart, automaticBackups, folder);
     }
 
     /** A choice that has a stable name in the settings file. */
