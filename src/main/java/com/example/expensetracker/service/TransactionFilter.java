@@ -1,19 +1,21 @@
 package com.example.expensetracker.service;
 
-import com.example.expensetracker.model.Expense;
+import com.example.expensetracker.model.Transaction;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.Locale;
 
 /**
- * Which expenses to show. Every part is optional; one left out lets
+ * Which transactions to show. Every part is optional; one left out lets
  * everything through.
  *
  * <p>Text is matched in Java, not by SQLite: SQLite folds the case of ASCII
  * letters only, so "CAFÉ" would not find "café". Here case and accents are
  * both ignored, so "cafe" finds it too.
  *
- * @param text       words in the description, note or tags
+ * @param text       words in the description, merchant, note or tags
+ * @param type       one type, or null for any
+ * @param accountId  an account the money left or reached, or 0 for any
  * @param categoryId a category's id, or 0 for any
  * @param tag        a tag, compared ignoring case, or null for any
  * @param from       the first day, inclusive, or null
@@ -21,44 +23,51 @@ import java.util.Locale;
  * @param minCents   the smallest amount, inclusive, or null
  * @param maxCents   the largest amount, inclusive, or null
  */
-public record ExpenseFilter(String text, long categoryId, String tag, LocalDate from, LocalDate to,
-        Long minCents, Long maxCents) {
+public record TransactionFilter(String text, Transaction.Type type, long accountId, long categoryId,
+        String tag, LocalDate from, LocalDate to, Long minCents, Long maxCents) {
 
     /** Everything. */
-    public static final ExpenseFilter ALL = new ExpenseFilter(null, 0, null, null, null, null, null);
+    public static final TransactionFilter ALL = new TransactionFilter(null, null, 0, 0, null, null, null, null, null);
 
     /** Whether anything is being filtered. */
     public boolean isActive() {
-        return !(fold(text).isEmpty() && categoryId == 0 && (tag == null || tag.isBlank())
-                && from == null && to == null && minCents == null && maxCents == null);
+        return !(fold(text).isEmpty() && type == null && accountId == 0 && categoryId == 0
+                && (tag == null || tag.isBlank()) && from == null && to == null
+                && minCents == null && maxCents == null);
     }
 
-    public boolean matches(Expense expense) {
-        if (categoryId != 0 && expense.category().id() != categoryId) {
+    public boolean matches(Transaction t) {
+        if (type != null && t.type() != type) {
             return false;
         }
-        if (from != null && expense.date().isBefore(from)) {
+        if (accountId != 0 && t.account().id() != accountId
+                && (t.toAccount() == null || t.toAccount().id() != accountId)) {
             return false;
         }
-        if (to != null && expense.date().isAfter(to)) {
+        if (categoryId != 0 && (t.category() == null || t.category().id() != categoryId)) {
             return false;
         }
-        if (minCents != null && expense.amountCents() < minCents) {
+        if (from != null && t.date().isBefore(from)) {
             return false;
         }
-        if (maxCents != null && expense.amountCents() > maxCents) {
+        if (to != null && t.date().isAfter(to)) {
             return false;
         }
-        if (tag != null && !tag.isBlank()
-                && expense.tags().stream().noneMatch(t -> fold(t).equals(fold(tag)))) {
+        if (minCents != null && t.amountCents() < minCents) {
+            return false;
+        }
+        if (maxCents != null && t.amountCents() > maxCents) {
+            return false;
+        }
+        if (tag != null && !tag.isBlank() && t.tags().stream().noneMatch(x -> fold(x).equals(fold(tag)))) {
             return false;
         }
         String wanted = fold(text);
         if (wanted.isEmpty()) {
             return true;
         }
-        String haystack = fold(expense.description() + " " + expense.note() + " "
-                + String.join(" ", expense.tags()));
+        String haystack = fold(t.description() + " " + t.merchant() + " " + t.note() + " "
+                + String.join(" ", t.tags()));
         // Every word must appear somewhere: "lunch team" finds "Lunch with the team".
         for (String word : wanted.split("\\s+")) {
             if (!haystack.contains(word)) {

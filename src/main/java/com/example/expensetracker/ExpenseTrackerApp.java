@@ -8,7 +8,7 @@ import com.example.expensetracker.controller.Ui;
 import com.example.expensetracker.data.DataStore;
 import com.example.expensetracker.controller.Render;
 import com.example.expensetracker.repository.Database;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.settings.SettingsStore;
 import java.io.IOException;
 import java.net.URL;
@@ -133,7 +133,7 @@ public final class ExpenseTrackerApp extends Application {
     }
 
     /** The main scene: sidebar, pages and the stylesheet. */
-    public static Scene createScene(ExpenseService service) {
+    public static Scene createScene(LedgerService service) {
         FXMLLoader loader = new FXMLLoader(resource("/fxml/main.fxml"));
         Parent root;
         try {

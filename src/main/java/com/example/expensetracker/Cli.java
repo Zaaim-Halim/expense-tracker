@@ -1,9 +1,9 @@
 package com.example.expensetracker;
 
 import com.example.expensetracker.model.Category;
-import com.example.expensetracker.model.Expense;
+import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.Database;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.service.Money;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -56,7 +56,8 @@ final class Cli {
     private static int status(AppPaths paths, PrintStream out) throws IOException, SQLException {
         paths.create();
         try (Database database = Database.open(paths.database())) {
-            long[] countAndTotal = new ExpenseService(database).countAndTotal();
+            LedgerService ledger = new LedgerService(database);
+            long[] countAndTotal = ledger.expenseCountAndTotal();
             String launchedFrom = HealthReport.applicationDir();
             out.println("version=" + AppInfo.version());
             out.println("java.version=" + System.getProperty("java.version"));
@@ -65,8 +66,12 @@ final class Cli {
             out.println("database=" + paths.database());
             out.println("schema=" + database.schemaVersion());
             out.println("xpack.application.dir=" + (launchedFrom == null ? "" : launchedFrom));
+            // expenses= and total= mean what they always meant, expenses only,
+            // so scripts reading them keep working.
             out.println("expenses=" + countAndTotal[0]);
             out.println("total=" + Money.format(countAndTotal[1], Locale.ROOT));
+            out.println("transactions=" + ledger.transactionCount());
+            out.println("accounts=" + ledger.allAccounts().size());
         }
         return 0;
     }
@@ -89,11 +94,11 @@ final class Cli {
             throws IOException, SQLException {
         paths.create();
         try (Database database = Database.open(paths.database())) {
-            ExpenseService service = new ExpenseService(database);
+            LedgerService service = new LedgerService(database);
             Category category = service.categoryNamed(options.arguments().get(2));
             long cents = Money.parseCents(options.arguments().get(1));
-            Expense saved = service.save(new Expense(0, options.arguments().get(0), cents, category,
-                    LocalDate.now(), ""));
+            Transaction saved = service.save(Transaction.expense(service.defaultAccount(), cents, category,
+                    options.arguments().get(0), LocalDate.now(), "", java.util.List.of()));
             out.println("added " + saved.id() + ": " + saved.description() + " "
                     + Money.format(saved.amountCents(), Locale.ROOT) + " (" + category.name() + ")");
         }

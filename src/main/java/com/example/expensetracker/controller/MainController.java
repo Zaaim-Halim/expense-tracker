@@ -2,7 +2,7 @@ package com.example.expensetracker.controller;
 
 import com.example.expensetracker.AppInfo;
 import com.example.expensetracker.ExpenseTrackerApp;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import java.io.IOException;
 import java.util.EnumMap;
 import java.util.Map;
@@ -23,7 +23,8 @@ public final class MainController {
     /** The pages, in sidebar order. */
     public enum Section {
         DASHBOARD("/fxml/dashboard.fxml"),
-        EXPENSES("/fxml/expenses.fxml"),
+        TRANSACTIONS("/fxml/transactions.fxml"),
+        ACCOUNTS("/fxml/accounts.fxml"),
         CATEGORIES("/fxml/categories.fxml"),
         SETTINGS("/fxml/settings.fxml");
 
@@ -36,7 +37,8 @@ public final class MainController {
 
     @FXML private StackPane content;
     @FXML private ToggleButton dashboardNav;
-    @FXML private ToggleButton expensesNav;
+    @FXML private ToggleButton transactionsNav;
+    @FXML private ToggleButton accountsNav;
     @FXML private ToggleButton categoriesNav;
     @FXML private ToggleButton settingsNav;
     @FXML private Label brandIcon;
@@ -45,17 +47,19 @@ public final class MainController {
     private final ToggleGroup navigation = new ToggleGroup();
     private final Map<Section, Parent> roots = new EnumMap<>(Section.class);
     private final Map<Section, Page> pages = new EnumMap<>(Section.class);
-    private ExpenseService service;
+    private LedgerService service;
     private Section shown;
 
     @FXML
     private void initialize() {
         dashboardNav.setGraphic(Icons.of(Icons.DASHBOARD));
-        expensesNav.setGraphic(Icons.of(Icons.LIST));
+        transactionsNav.setGraphic(Icons.of(Icons.LIST));
+        accountsNav.setGraphic(Icons.of(Icons.WALLET));
         categoriesNav.setGraphic(Icons.of(Icons.TAG));
         settingsNav.setGraphic(Icons.of(Icons.SETTINGS));
         dashboardNav.setTooltip(new Tooltip(Shortcuts.hint("Dashboard", Shortcuts.DASHBOARD)));
-        expensesNav.setTooltip(new Tooltip(Shortcuts.hint("Expenses", Shortcuts.EXPENSES)));
+        transactionsNav.setTooltip(new Tooltip(Shortcuts.hint("Transactions", Shortcuts.TRANSACTIONS)));
+        accountsNav.setTooltip(new Tooltip(Shortcuts.hint("Accounts", Shortcuts.ACCOUNTS)));
         categoriesNav.setTooltip(new Tooltip(Shortcuts.hint("Categories", Shortcuts.CATEGORIES)));
         settingsNav.setTooltip(new Tooltip(Shortcuts.hint("Settings", Shortcuts.SETTINGS)));
         javafx.scene.image.ImageView logo = new javafx.scene.image.ImageView(
@@ -64,7 +68,8 @@ public final class MainController {
         logo.setFitHeight(34);
         logo.setSmooth(true);
         brandIcon.setGraphic(logo);
-        for (ToggleButton button : new ToggleButton[] {dashboardNav, expensesNav, categoriesNav, settingsNav}) {
+        for (ToggleButton button : new ToggleButton[] {dashboardNav, transactionsNav, accountsNav, categoriesNav,
+            settingsNav}) {
             button.setToggleGroup(navigation);
         }
         // A section stays selected: clicking the current one again is not "none".
@@ -78,8 +83,8 @@ public final class MainController {
         versionLabel.setText("Version " + AppInfo.version());
     }
 
-    public void setup(ExpenseService expenseService) {
-        this.service = expenseService;
+    public void setup(LedgerService ledger) {
+        this.service = ledger;
         navigation.selectToggle(dashboardNav);
         // A changed setting shows at once: the theme on the window, and dates
         // and amounts on the page in front of the user. Other pages redraw
@@ -96,7 +101,7 @@ public final class MainController {
      * Rebuilds every page on {@code replacement}, after a restore put other
      * data under the window. The page on screen stays on screen.
      */
-    public void replaceService(ExpenseService replacement) {
+    public void replaceService(LedgerService replacement) {
         this.service = replacement;
         roots.clear();
         pages.clear();
@@ -112,17 +117,18 @@ public final class MainController {
      */
     public void installShortcuts(Scene scene) {
         scene.getAccelerators().put(Shortcuts.DASHBOARD, () -> select(Section.DASHBOARD));
-        scene.getAccelerators().put(Shortcuts.EXPENSES, () -> select(Section.EXPENSES));
+        scene.getAccelerators().put(Shortcuts.TRANSACTIONS, () -> select(Section.TRANSACTIONS));
+        scene.getAccelerators().put(Shortcuts.ACCOUNTS, () -> select(Section.ACCOUNTS));
         scene.getAccelerators().put(Shortcuts.CATEGORIES, () -> select(Section.CATEGORIES));
         scene.getAccelerators().put(Shortcuts.SETTINGS, () -> select(Section.SETTINGS));
         scene.getAccelerators().put(Shortcuts.FIND, () -> {
-            select(Section.EXPENSES);
-            if (pages.get(Section.EXPENSES) instanceof ExpensesController expenses) {
-                expenses.focusSearch();
+            select(Section.TRANSACTIONS);
+            if (pages.get(Section.TRANSACTIONS) instanceof TransactionsController transactions) {
+                transactions.focusSearch();
             }
         });
-        scene.getAccelerators().put(Shortcuts.NEW_EXPENSE, () -> {
-            if (ExpenseDialog.show(scene.getWindow(), service, null)) {
+        scene.getAccelerators().put(Shortcuts.NEW_TRANSACTION, () -> {
+            if (TransactionDialog.show(scene.getWindow(), service, null)) {
                 dataChanged();
             }
         });
@@ -132,15 +138,19 @@ public final class MainController {
     public void select(Section section) {
         navigation.selectToggle(switch (section) {
             case DASHBOARD -> dashboardNav;
-            case EXPENSES -> expensesNav;
+            case TRANSACTIONS -> transactionsNav;
+            case ACCOUNTS -> accountsNav;
             case CATEGORIES -> categoriesNav;
             case SETTINGS -> settingsNav;
         });
     }
 
     private Section sectionOf(Toggle toggle) {
-        if (toggle == expensesNav) {
-            return Section.EXPENSES;
+        if (toggle == transactionsNav) {
+            return Section.TRANSACTIONS;
+        }
+        if (toggle == accountsNav) {
+            return Section.ACCOUNTS;
         }
         if (toggle == settingsNav) {
             return Section.SETTINGS;
@@ -165,7 +175,7 @@ public final class MainController {
             Page page = loader.getController();
             page.setup(service, this::dataChanged);
             if (page instanceof DashboardController dashboard) {
-                dashboard.onShowAll(() -> select(Section.EXPENSES));
+                dashboard.onShowAll(() -> select(Section.TRANSACTIONS));
             }
             pages.put(section, page);
             return root;

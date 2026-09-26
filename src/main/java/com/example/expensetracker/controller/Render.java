@@ -2,9 +2,10 @@ package com.example.expensetracker.controller;
 
 import com.example.expensetracker.ExpenseTrackerApp;
 import com.example.expensetracker.model.Category;
-import com.example.expensetracker.model.Expense;
+import com.example.expensetracker.model.Account;
+import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.Database;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.settings.Settings;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -71,8 +72,8 @@ public final class Render {
 
         try (Database empty = Database.open(scratch.resolve("empty.db"));
                 Database filled = Database.open(scratch.resolve("sample.db"))) {
-            ExpenseService emptyService = new ExpenseService(empty);
-            ExpenseService service = new ExpenseService(filled);
+            LedgerService emptyService = new LedgerService(empty);
+            LedgerService service = new LedgerService(filled);
             seed(service);
             // Backups of the sample data, for the Data section of Settings.
             com.example.expensetracker.data.DataStore samples = com.example.expensetracker.data.DataStore.open(
@@ -100,14 +101,24 @@ public final class Render {
             MainController emptyMain = (MainController) emptyScene.getUserData();
             emptyMain.select(MainController.Section.DASHBOARD);
             write(emptyScene, directory.resolve("dashboard-empty.png"));
-            emptyMain.select(MainController.Section.EXPENSES);
-            write(emptyScene, directory.resolve("expenses-empty.png"));
+            emptyMain.select(MainController.Section.TRANSACTIONS);
+            write(emptyScene, directory.resolve("transactions-empty.png"));
+            emptyMain.select(MainController.Section.ACCOUNTS);
+            write(emptyScene, directory.resolve("accounts-empty.png"));
 
             stage.setScene(scene);
-            Expense sample = service.allExpenses().get(0);
-            dialog(ExpenseDialog.create(stage, service, null), directory.resolve("dialog-new-expense.png"));
-            dialog(ExpenseDialog.create(stage, service, sample), directory.resolve("dialog-edit-expense.png"));
+            List<Transaction> all = service.allTransactions();
+            Transaction sample = first(all, Transaction.Type.EXPENSE);
+            dialog(TransactionDialog.create(stage, service, null), directory.resolve("dialog-new-transaction.png"));
+            dialog(TransactionDialog.create(stage, service, sample), directory.resolve("dialog-edit-expense.png"));
+            dialog(TransactionDialog.create(stage, service, first(all, Transaction.Type.INCOME)),
+                    directory.resolve("dialog-edit-income.png"));
+            dialog(TransactionDialog.create(stage, service, first(all, Transaction.Type.TRANSFER)),
+                    directory.resolve("dialog-edit-transfer.png"));
             dialog(CategoryDialog.create(stage, service, null), directory.resolve("dialog-new-category.png"));
+            dialog(AccountDialog.create(stage, service, null), directory.resolve("dialog-new-account.png"));
+            dialog(AccountDialog.create(stage, service, service.accountNamed("Visa")),
+                    directory.resolve("dialog-edit-card.png"));
 
             // Dark, with another accent and other formats: every page again,
             // and a dialog, which is themed separately from the window.
@@ -117,7 +128,12 @@ public final class Render {
                 main.select(section);
                 write(scene, directory.resolve(section.name().toLowerCase() + "-dark.png"));
             }
-            dialog(ExpenseDialog.create(stage, service, sample), directory.resolve("dialog-edit-expense-dark.png"));
+            dialog(TransactionDialog.create(stage, service, sample), directory.resolve("dialog-edit-expense-dark.png"));
+            dialog(TransactionDialog.create(stage, service, first(all, Transaction.Type.TRANSFER)),
+                    directory.resolve("dialog-edit-transfer-dark.png"));
+            dialog(AccountDialog.create(stage, service, service.accountNamed("Visa")),
+                    directory.resolve("dialog-edit-card-dark.png"));
+            dialog(CategoryDialog.create(stage, service, null), directory.resolve("dialog-new-category-dark.png"));
             Appearance.change(light.withAccent(Settings.Accent.ROSE));
             main.select(MainController.Section.DASHBOARD);
             write(scene, directory.resolve("dashboard-rose.png"));
@@ -135,12 +151,12 @@ public final class Render {
                 write(popup, directory.resolve("calendar-" + start.key() + ".png"));
             }
             // Search and filters in use: words, a tag, and the extra filters open.
-            main.select(MainController.Section.EXPENSES);
+            main.select(MainController.Section.TRANSACTIONS);
             ((TextField) scene.getRoot().lookup(".search-input")).setText("the");
             ((ToggleButton) scene.getRoot().lookup(".filter-toggle")).setSelected(true);
-            write(scene, directory.resolve("expenses-filtered.png"));
+            write(scene, directory.resolve("transactions-filtered.png"));
             ComboBox<?> tagFilter = (ComboBox<?>) scene.getRoot().lookupAll(".combo-box").stream()
-                    .filter(node -> ((ComboBox<?>) node).getPromptText().equals("All tags")).findFirst().orElseThrow();
+                    .filter(node -> "All tags".equals(((ComboBox<?>) node).getPromptText())).findFirst().orElseThrow();
             popup(tagFilter::show, tagFilter::hide, directory.resolve("popup-tag-filter.png"));
             ((TextField) scene.getRoot().lookup(".search-input")).setText("");
             ((ToggleButton) scene.getRoot().lookup(".filter-toggle")).setSelected(false);
@@ -180,9 +196,14 @@ public final class Render {
             for (boolean dark : new boolean[] {false, true}) {
                 String theme = dark ? "-dark" : "";
                 Appearance.change(light.withTheme(dark ? Settings.Theme.DARK : Settings.Theme.LIGHT));
-                Dialog<?> edit = ExpenseDialog.create(stage, service, sample);
+                Dialog<?> edit = TransactionDialog.create(stage, service, sample);
                 edit.show();
-                ComboBox<?> category = (ComboBox<?>) edit.getDialogPane().lookup(".combo-box");
+                ComboBox<?> account = (ComboBox<?>) edit.getDialogPane().lookupAll(".combo-box").stream()
+                        .filter(Node::isVisible).findFirst().orElseThrow();
+                popup(account::show, account::hide, directory.resolve("popup-account" + theme + ".png"));
+                ComboBox<?> category = (ComboBox<?>) edit.getDialogPane().lookupAll(".combo-box").stream()
+                        .filter(node -> "Choose a category".equals(((ComboBox<?>) node).getPromptText()))
+                        .findFirst().orElseThrow();
                 popup(category::show, category::hide, directory.resolve("popup-category" + theme + ".png"));
                 DatePicker date = (DatePicker) edit.getDialogPane().lookup(".date-picker");
                 popup(date::show, date::hide, directory.resolve("popup-calendar" + theme + ".png"));
@@ -190,10 +211,10 @@ public final class Render {
                 main.select(MainController.Section.SETTINGS);
                 ComboBox<?> setting = (ComboBox<?>) scene.getRoot().lookup(".setting-row .combo-box");
                 popup(setting::show, setting::hide, directory.resolve("popup-setting" + theme + ".png"));
-                dialog(Ui.confirmation(stage, "Delete this expense?",
+                dialog(Ui.confirmation(stage, "Delete this transaction?",
                         "Farmers market, 26.75 on Sep 20, 2026.\nThis cannot be undone.", "Delete"),
                         directory.resolve("alert-delete" + theme + ".png"));
-                dialog(Ui.errorAlert(stage, "The expense could not be saved", "The disk is full."),
+                dialog(Ui.errorAlert(stage, "The transaction could not be saved", "The disk is full."),
                         directory.resolve("alert-error" + theme + ".png"));
             }
 
@@ -225,7 +246,7 @@ public final class Render {
             heading.getStyleClass().add("stat-label");
             grid.add(heading, column + 1, 0);
         }
-        String[][] variants = {{"primary", "Add expense"}, {"secondary", "Edit"}, {"", "Cancel"}};
+        String[][] variants = {{"primary", "Add transaction"}, {"secondary", "Edit"}, {"", "Cancel"}};
         for (int row = 0; row < variants.length; row++) {
             Label kind = new Label(variants[row][0].isEmpty() ? "plain" : variants[row][0]);
             kind.getStyleClass().add("row-subtitle");
@@ -337,20 +358,33 @@ public final class Render {
         dialog.close();
     }
 
-    /** A month of plausible spending, dated no later than today. */
-    private static void seed(ExpenseService service) throws Exception {
+    private static Transaction first(List<Transaction> all, Transaction.Type type) {
+        return all.stream().filter(t -> t.type() == type).findFirst().orElseThrow();
+    }
+
+    /**
+     * A month of plausible money: a salary, spending from the bank account
+     * and on a credit card, the card paid off in part, and some put aside.
+     */
+    private static void seed(LedgerService service) throws Exception {
         LocalDate today = LocalDate.now();
+        Account bank = service.defaultAccount();
+        service.save(new Account(bank.id(), "Everyday account", Account.Kind.BANK, "", 184_250));
+        bank = service.defaultAccount();
+        Account card = service.save(new Account(0, "Visa", Account.Kind.CREDIT_CARD, "", -32_000));
+        Account savings = service.save(new Account(0, "Savings", Account.Kind.SAVINGS, "", 500_000));
+        Account wallet = service.save(new Account(0, "Wallet", Account.Kind.CASH, "", 6_000));
         Object[][] rows = {
-            {"Rent", 125000L, "Housing", 1},
-            {"Groceries", 8420L, "Food", 3},
-            {"Monthly metro pass", 4900L, "Transport", 2},
-            {"Electricity bill", 7235L, "Utilities", 6},
-            {"Cinema tickets", 2400L, "Entertainment", 9},
-            {"Pharmacy", 1890L, "Health", 11},
-            {"Running shoes", 11999L, "Shopping", 13},
-            {"Lunch with the team", 3250L, "Food", 16},
-            {"Taxi to the airport", 4140L, "Transport", 18},
-            {"Farmers market", 2675L, "Food", 20},
+            {"Rent", 125000L, "Housing", 1, bank},
+            {"Groceries", 8420L, "Food", 3, card},
+            {"Monthly metro pass", 4900L, "Transport", 2, bank},
+            {"Electricity bill", 7235L, "Utilities", 6, bank},
+            {"Cinema tickets", 2400L, "Entertainment", 9, card},
+            {"Pharmacy", 1890L, "Health", 11, wallet},
+            {"Running shoes", 11999L, "Shopping", 13, card},
+            {"Lunch with the team", 3250L, "Food", 16, card},
+            {"Taxi to the airport", 4140L, "Transport", 18, wallet},
+            {"Farmers market", 2675L, "Food", 20, wallet},
         };
         for (Object[] row : rows) {
             int day = Math.min((Integer) row[3], today.getDayOfMonth());
@@ -361,9 +395,20 @@ public final class Render {
                 case "Farmers market" -> List.of("weekend");
                 default -> List.of();
             };
-            service.save(new Expense(0, (String) row[0], (Long) row[1], category,
-                    today.withDayOfMonth(day), "", tags));
+            service.save(Transaction.expense((Account) row[4], (Long) row[1], category,
+                    (String) row[0], today.withDayOfMonth(day), "", tags));
         }
+        LocalDate first = today.withDayOfMonth(1);
+        service.save(new Transaction(0, Transaction.Type.INCOME, bank, 320_000, null, 0,
+                service.categoryNamed("Salary"), "Acme Ltd", "September salary", first, "", List.of()));
+        service.save(new Transaction(0, Transaction.Type.INCOME, savings, 1_250, null, 0,
+                service.categoryNamed("Interest"), "", "Interest", today, "", List.of()));
+        service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, 40_000, savings, 40_000, null, "",
+                "Put aside", first.plusDays(Math.min(1, today.getDayOfMonth() - 1)), "", List.of()));
+        service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, 32_000, card, 32_000, null, "",
+                "Card payment", today, "", List.of()));
+        service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, 10_000, wallet, 10_000, null, "",
+                "Cash machine", today, "", List.of()));
     }
 
     private static void write(Scene scene, Path file) throws IOException {

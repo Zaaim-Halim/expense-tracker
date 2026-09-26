@@ -16,10 +16,11 @@ import javafx.scene.input.KeyCombination;
 final class Shortcuts {
 
     static final KeyCombination DASHBOARD = new KeyCodeCombination(KeyCode.DIGIT1, KeyCombination.SHORTCUT_DOWN);
-    static final KeyCombination EXPENSES = new KeyCodeCombination(KeyCode.DIGIT2, KeyCombination.SHORTCUT_DOWN);
-    static final KeyCombination CATEGORIES = new KeyCodeCombination(KeyCode.DIGIT3, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination TRANSACTIONS = new KeyCodeCombination(KeyCode.DIGIT2, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination ACCOUNTS = new KeyCodeCombination(KeyCode.DIGIT3, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination CATEGORIES = new KeyCodeCombination(KeyCode.DIGIT4, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination SETTINGS = new KeyCodeCombination(KeyCode.COMMA, KeyCombination.SHORTCUT_DOWN);
-    static final KeyCombination NEW_EXPENSE = new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination NEW_TRANSACTION = new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination FIND = new KeyCodeCombination(KeyCode.F, KeyCombination.SHORTCUT_DOWN);
 
     /** What each shortcut does, for the list in Settings. */
@@ -31,14 +32,15 @@ final class Shortcuts {
 
     static List<Entry> all() {
         return List.of(
-                new Entry(NEW_EXPENSE.getDisplayText(), "New expense"),
-                new Entry(FIND.getDisplayText(), "Search expenses"),
+                new Entry(NEW_TRANSACTION.getDisplayText(), "New transaction"),
+                new Entry(FIND.getDisplayText(), "Search transactions"),
                 new Entry(DASHBOARD.getDisplayText(), "Dashboard"),
-                new Entry(EXPENSES.getDisplayText(), "Expenses"),
+                new Entry(TRANSACTIONS.getDisplayText(), "Transactions"),
+                new Entry(ACCOUNTS.getDisplayText(), "Accounts"),
                 new Entry(CATEGORIES.getDisplayText(), "Categories"),
                 new Entry(SETTINGS.getDisplayText(), "Settings"),
-                new Entry("Enter", "Edit the selected expense or category"),
-                new Entry("Delete", "Delete the selected expense or category"),
+                new Entry("Enter", "Edit what is selected"),
+                new Entry("Delete", "Delete what is selected"),
                 new Entry("Esc", "Close a dialog without saving"));
     }
 

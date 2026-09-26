@@ -24,7 +24,7 @@ public final class CategoryRepository {
         List<Category> categories = new ArrayList<>();
         try (Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery(
-                        "SELECT id, name, color FROM categories ORDER BY name COLLATE NOCASE")) {
+                        "SELECT id, name, color, kind FROM categories ORDER BY name COLLATE NOCASE")) {
             while (rows.next()) {
                 categories.add(read(rows));
             }
@@ -35,7 +35,7 @@ public final class CategoryRepository {
     /** The category called {@code name}, ignoring case. */
     public Optional<Category> findByName(String name) throws SQLException {
         try (PreparedStatement query = connection.prepareStatement(
-                "SELECT id, name, color FROM categories WHERE name = ? COLLATE NOCASE")) {
+                "SELECT id, name, color, kind FROM categories WHERE name = ? COLLATE NOCASE")) {
             query.setString(1, name);
             try (ResultSet rows = query.executeQuery()) {
                 return rows.next() ? Optional.of(read(rows)) : Optional.empty();
@@ -45,24 +45,26 @@ public final class CategoryRepository {
 
     public Category insert(Category category) throws SQLException {
         try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO categories(name, color) VALUES (?, ?)",
+                "INSERT INTO categories(name, color, kind) VALUES (?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             insert.setString(1, category.name());
             insert.setString(2, category.color());
+            insert.setString(3, category.kind().key());
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
                 keys.next();
-                return new Category(keys.getLong(1), category.name(), category.color());
+                return new Category(keys.getLong(1), category.name(), category.color(), category.kind());
             }
         }
     }
 
     public void update(Category category) throws SQLException {
         try (PreparedStatement update = connection.prepareStatement(
-                "UPDATE categories SET name = ?, color = ? WHERE id = ?")) {
+                "UPDATE categories SET name = ?, color = ?, kind = ? WHERE id = ?")) {
             update.setString(1, category.name());
             update.setString(2, category.color());
-            update.setLong(3, category.id());
+            update.setString(3, category.kind().key());
+            update.setLong(4, category.id());
             update.executeUpdate();
         }
     }
@@ -75,10 +77,10 @@ public final class CategoryRepository {
         }
     }
 
-    /** How many expenses are filed under the category. */
+    /** How many transactions are filed under the category. */
     public int usage(long id) throws SQLException {
         try (PreparedStatement query = connection.prepareStatement(
-                "SELECT COUNT(*) FROM expenses WHERE category_id = ?")) {
+                "SELECT COUNT(*) FROM transactions WHERE category_id = ?")) {
             query.setLong(1, id);
             try (ResultSet rows = query.executeQuery()) {
                 return rows.next() ? rows.getInt(1) : 0;
@@ -87,6 +89,7 @@ public final class CategoryRepository {
     }
 
     static Category read(ResultSet rows) throws SQLException {
-        return new Category(rows.getLong("id"), rows.getString("name"), rows.getString("color"));
+        return new Category(rows.getLong("id"), rows.getString("name"), rows.getString("color"),
+                Category.Kind.fromKey(rows.getString("kind")));
     }
 }

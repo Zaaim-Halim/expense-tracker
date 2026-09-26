@@ -1,7 +1,7 @@
 package com.example.expensetracker.data;
 
 import com.example.expensetracker.repository.Database;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
@@ -56,7 +56,7 @@ public final class DataStore implements AutoCloseable {
     private final Path file;
     private Path backupFolder;
     private Database database;
-    private ExpenseService service;
+    private LedgerService service;
 
     private DataStore(Path file, Path backupFolder) {
         this.file = file;
@@ -72,7 +72,7 @@ public final class DataStore implements AutoCloseable {
     public static DataStore open(Path file, Path backupFolder) throws SQLException {
         DataStore store = new DataStore(file, backupFolder);
         store.database = Database.open(file);
-        store.service = new ExpenseService(store.database);
+        store.service = new LedgerService(store.database);
         return store;
     }
 
@@ -81,7 +81,7 @@ public final class DataStore implements AutoCloseable {
         return new DataStore(file, backupFolder);
     }
 
-    public synchronized ExpenseService service() {
+    public synchronized LedgerService service() {
         return service;
     }
 
@@ -209,7 +209,7 @@ public final class DataStore implements AutoCloseable {
         if (!info.intact()) {
             throw new IOException("the backup of " + backup.created() + " is damaged, so it was not restored");
         }
-        if (info.expenses() < 0 || info.compatibility() < 1) {
+        if (info.records() < 0 || info.compatibility() < 1) {
             throw new IOException("the backup of " + backup.created() + " holds no Expense Tracker data");
         }
         if (info.compatibility() > Database.SCHEMA) {
@@ -300,7 +300,7 @@ public final class DataStore implements AutoCloseable {
 
     private void reopen() throws SQLException {
         database = Database.open(file);
-        service = new ExpenseService(database);
+        service = new LedgerService(database);
     }
 
     @Override

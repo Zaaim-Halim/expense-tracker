@@ -1,8 +1,9 @@
 package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.Category;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import java.sql.SQLException;
+import java.util.Comparator;
 import java.util.List;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -17,19 +18,19 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
-/** The categories expenses are filed under. */
+/** The categories expenses and income are filed under. */
 public final class CategoriesController implements Page {
 
     @FXML private Label summaryLabel;
     @FXML private Button newButton;
     @FXML private ListView<Category> list;
 
-    private ExpenseService service;
+    private LedgerService service;
     private Runnable dataChanged;
 
     @Override
-    public void setup(ExpenseService expenseService, Runnable changed) {
-        this.service = expenseService;
+    public void setup(LedgerService ledger, Runnable changed) {
+        this.service = ledger;
         this.dataChanged = changed;
         newButton.setGraphic(Icons.of(Icons.ADD));
         newButton.setOnAction(event -> edit(null));
@@ -57,7 +58,9 @@ public final class CategoriesController implements Page {
             Ui.error(window(), "The categories could not be read", e.getMessage());
             return;
         }
-        list.setItems(FXCollections.observableArrayList(categories));
+        // Expense categories first, then income: the two kinds never interleave.
+        list.setItems(FXCollections.observableArrayList(categories.stream()
+                .sorted(Comparator.comparing(Category::kind)).toList()));
         summaryLabel.setText(categories.size() + (categories.size() == 1 ? " category" : " categories"));
     }
 
@@ -107,8 +110,10 @@ public final class CategoriesController implements Page {
             } catch (SQLException e) {
                 used = -1;
             }
-            Label usage = new Label(used < 0 ? "" : used == 0 ? "Not used yet"
-                    : used + (used == 1 ? " expense" : " expenses"));
+            boolean income = category.kind() == Category.Kind.INCOME;
+            String kind = income ? "Income" : "Expenses";
+            Label usage = new Label(kind + (used < 0 ? "" : " · " + (used == 0 ? "not used yet"
+                    : used + (used == 1 ? " transaction" : " transactions"))));
             usage.getStyleClass().add("row-subtitle");
             VBox text = new VBox(2, name, usage);
             HBox.setHgrow(text, Priority.ALWAYS);

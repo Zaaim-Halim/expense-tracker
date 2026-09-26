@@ -21,6 +21,14 @@
     -danger: #dc2626;
     -danger-soft: #fef2f2;
     -danger-solid: #dc2626;
+    -positive: #15803d;
+    -positive-soft: #f0fdf4;
+    -kind-cash: #16a34a;
+    -kind-bank: #2563eb;
+    -kind-savings: #0d9488;
+    -kind-card: #e11d48;
+    -kind-loan: #d97706;
+    -kind-investment: #7c3aed;
     -hover: #f3f4f8;
     -subtle: #f8f9fc;
     -track: #f1f2f6;
@@ -798,6 +806,8 @@
     -muted: #7d8595;
     -danger: #f87171;
     -danger-soft: #3b1d22;
+    -positive: #4ade80;
+    -positive-soft: #14281c;
     -hover: #1f232d;
     -subtle: #1b1e27;
     -track: #242833;
@@ -877,6 +887,70 @@
 .root.theme-dark.accent-amber,
 .root.theme-dark.accent-rose {
     -accent-soft: derive(-accent, -62%);
+}
+
+/* --- accounts and transactions ----------------------------------------- */
+
+/* Money in is green; money out is plain text with a minus sign; owed is red. */
+.amount-income,
+.amount-positive {
+    -fx-text-fill: -positive;
+}
+
+.amount-expense {
+    -fx-text-fill: -text;
+}
+
+.amount-transfer {
+    -fx-text-fill: -text-2;
+}
+
+.amount-negative {
+    -fx-text-fill: -danger;
+}
+
+.merchant {
+    -fx-text-fill: -muted;
+    -fx-font-size: 12px;
+}
+
+.field-hint {
+    -fx-text-fill: -muted;
+    -fx-font-size: 11.5px;
+}
+
+.account-badge {
+    -fx-min-width: 34;
+    -fx-min-height: 34;
+    -fx-max-width: 34;
+    -fx-max-height: 34;
+    -fx-background-radius: 10;
+    -fx-background-color: -kind-bank;
+}
+
+.account-cash { -fx-background-color: -kind-cash; }
+.account-bank { -fx-background-color: -kind-bank; }
+.account-savings { -fx-background-color: -kind-savings; }
+.account-credit-card { -fx-background-color: -kind-card; }
+.account-loan { -fx-background-color: -kind-loan; }
+.account-investment { -fx-background-color: -kind-investment; }
+
+.account-badge-icon,
+.badge-transfer .badge-icon {
+    -fx-fill: -on-accent;
+    -fx-scale-x: 0.8;
+    -fx-scale-y: 0.8;
+}
+
+.account-icon,
+.chip-icon {
+    -fx-fill: -text-2;
+    -fx-scale-x: 0.72;
+    -fx-scale-y: 0.72;
+}
+
+.badge-transfer {
+    -fx-background-color: -muted;
 }
 
 /* --- theme choice -------------------------------------------------------- */

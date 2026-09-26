@@ -20,23 +20,27 @@ application. Why it exists, what it proves so far and what comes next are in
 
 ## What it does
 
-- **Dashboard:** this month's total, how many expenses, the top category,
-  spending by category and the latest expenses.
-- **Expenses:** add, edit and delete; sortable by date, description, category
-  or amount; double-click or Enter to edit, Delete to remove.
-- **Search and filters:** search descriptions, notes and tags (case and
-  accents ignored, so "cafe" finds "Café"); filter by category, tag, a date
-  range and an amount range; the total of what is shown.
-- **Tags:** any number of labels per expense (travel, work, family…), picked
-  from the ones already in use or typed.
-- **Categories:** eight to start with; add your own, rename, recolour; a
-  category still holding expenses cannot be deleted, so no expense is ever lost
-  with it.
+- **Dashboard:** what was spent, received and saved this month, spending by
+  category and the latest transactions.
+- **Accounts:** cash, bank, savings, credit cards, loans and investments, each
+  with its balance, worked out from its transactions and never stored; net
+  worth, what you have and what you owe. A card shows what is owed on it.
+- **Transactions:** expenses, income and transfers between accounts, with a
+  merchant; add, edit, duplicate and delete; sortable by any column;
+  double-click or Enter to edit, Delete to remove.
+- **Search and filters:** search descriptions, merchants, notes and tags (case
+  and accents ignored, so "cafe" finds "Café"); filter by type, account,
+  category, tag, a date range and an amount range.
+- **Tags:** any number of labels per transaction (travel, work, family…),
+  picked from the ones already in use or typed.
+- **Categories:** for expenses or for income, a set of each to start with; add
+  your own, rename, recolour. A category or an account still in use cannot be
+  deleted, so no transaction is ever lost with it.
 - **Settings:** light, dark or the system's theme, six accent colours, and
   how dates, amounts and the first day of the week are written. Saved as they
   change, in `settings.properties` beside the data, so updates keep them.
 - **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
-  elsewhere), listed in Settings: N for a new expense, F to search, 1–3 for
+  elsewhere), listed in Settings: N for a new transaction, F to search, 1–4 for
   the pages, comma for Settings; Enter edits and Delete removes the selected
   row.
 - **Backups:** made automatically once a day (the latest 10 are kept) and
@@ -79,7 +83,7 @@ With no command, opens the application.
 
   --version                         print the version and exit
   --status                          print where the data is and what it holds
-  --add DESCRIPTION AMOUNT CATEGORY add an expense dated today
+  --add DESCRIPTION AMOUNT CATEGORY add an expense dated today, to the first account
   --backup                          copy the data into the backup folder now
   --help                            show this help
 ```
@@ -94,11 +98,15 @@ java.version=21.0.8
 java.home=…/io.xpack.examples.expensetracker/versions/1.0.0/runtime
 data.dir=…
 database=…/expenses.db
-schema=2
+schema=3
 xpack.application.dir=…/io.xpack.examples.expensetracker
 expenses=2
 total=15.90
+transactions=3
+accounts=1
 ```
+
+`expenses` and `total` count expenses only; `transactions` counts every type.
 
 ## Installing
 

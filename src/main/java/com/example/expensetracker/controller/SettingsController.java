@@ -1,6 +1,6 @@
 package com.example.expensetracker.controller;
 
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.settings.Formats;
 import com.example.expensetracker.settings.Settings;
 import java.io.IOException;
@@ -58,7 +58,7 @@ public final class SettingsController implements Page {
     private boolean showing;
 
     @Override
-    public void setup(ExpenseService service, Runnable dataChanged) {
+    public void setup(LedgerService service, Runnable dataChanged) {
         HBox themes = new HBox();
         themes.getStyleClass().add("segmented");
         for (Settings.Theme choice : Settings.Theme.values()) {

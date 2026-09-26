@@ -8,24 +8,26 @@
 <?import javafx.scene.layout.VBox?>
 
 <VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
-      fx:controller="com.example.expensetracker.controller.ExpensesController"
+      fx:controller="com.example.expensetracker.controller.TransactionsController"
       styleClass="page" spacing="20">
   <HBox styleClass="page-header" alignment="CENTER_LEFT" spacing="10">
     <VBox spacing="4" HBox.hgrow="ALWAYS">
-      <Label text="Expenses" styleClass="page-title"/>
+      <Label text="Transactions" styleClass="page-title"/>
       <Label fx:id="summaryLabel" styleClass="page-subtitle"/>
     </VBox>
+    <Button fx:id="duplicateButton" text="Duplicate" styleClass="secondary"/>
     <Button fx:id="editButton" text="Edit" styleClass="secondary"/>
     <Button fx:id="deleteButton" text="Delete" styleClass="secondary, danger-text"/>
-    <Button fx:id="newButton" text="New expense" styleClass="primary"/>
+    <Button fx:id="newButton" text="New transaction" styleClass="primary"/>
   </HBox>
   <VBox fx:id="filterBar" styleClass="filter-bar" spacing="10"/>
   <VBox styleClass="card, table-card" VBox.vgrow="ALWAYS">
     <TableView fx:id="table" VBox.vgrow="ALWAYS">
       <columns>
-        <TableColumn fx:id="dateColumn" text="Date" prefWidth="130" minWidth="110"/>
-        <TableColumn fx:id="descriptionColumn" text="Description" prefWidth="320" minWidth="160"/>
-        <TableColumn fx:id="categoryColumn" text="Category" prefWidth="170" minWidth="130"/>
+        <TableColumn fx:id="dateColumn" text="Date" prefWidth="120" minWidth="100"/>
+        <TableColumn fx:id="descriptionColumn" text="Description" prefWidth="300" minWidth="160"/>
+        <TableColumn fx:id="accountColumn" text="Account" prefWidth="140" minWidth="100"/>
+        <TableColumn fx:id="categoryColumn" text="Category" prefWidth="160" minWidth="120"/>
         <TableColumn fx:id="amountColumn" text="Amount" prefWidth="130" minWidth="100"/>
       </columns>
     </TableView>

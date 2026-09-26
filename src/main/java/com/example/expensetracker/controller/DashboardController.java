@@ -1,8 +1,8 @@
 package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.CategoryTotal;
-import com.example.expensetracker.model.Expense;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.model.Transaction;
+import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.service.MonthSummary;
 import java.sql.SQLException;
 import java.time.YearMonth;
@@ -28,22 +28,23 @@ public final class DashboardController implements Page {
     @FXML private Label countValue;
     @FXML private Label countCaption;
     @FXML private Label topValue;
-    @FXML private Label topCaption;
+    @FXML private Label savedLabel;
+    @FXML private Label topCategory;
     @FXML private VBox categoryRows;
     @FXML private VBox recentRows;
     @FXML private Button newExpenseButton;
     @FXML private Button showAllButton;
 
-    private ExpenseService service;
+    private LedgerService service;
     private Runnable dataChanged;
 
     @Override
-    public void setup(ExpenseService expenseService, Runnable changed) {
-        this.service = expenseService;
+    public void setup(LedgerService ledger, Runnable changed) {
+        this.service = ledger;
         this.dataChanged = changed;
         newExpenseButton.setGraphic(Icons.of(Icons.ADD));
         newExpenseButton.setOnAction(event -> {
-            if (ExpenseDialog.show(newExpenseButton.getScene().getWindow(), service, null)) {
+            if (TransactionDialog.show(newExpenseButton.getScene().getWindow(), service, null)) {
                 dataChanged.run();
             }
         });
@@ -61,10 +62,10 @@ public final class DashboardController implements Page {
         monthLabel.setText(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault(Locale.Category.DISPLAY))
                 .format(month));
         MonthSummary summary;
-        List<Expense> recent;
+        List<Transaction> recent;
         try {
             summary = service.summary(month);
-            recent = service.recentExpenses(6);
+            recent = service.recentTransactions(6);
         } catch (SQLException e) {
             Ui.error(monthLabel.getScene() == null ? null : monthLabel.getScene().getWindow(),
                     "The dashboard could not be read", e.getMessage());
@@ -74,15 +75,16 @@ public final class DashboardController implements Page {
         totalValue.setText(Ui.money(summary.totalCents()));
         totalCaption.setText("spent in " + month.getMonth().getDisplayName(
                 java.time.format.TextStyle.FULL, Locale.getDefault(Locale.Category.DISPLAY)));
-        countValue.setText(Integer.toString(summary.count()));
-        countCaption.setText(summary.count() == 1 ? "expense this month" : "expenses this month");
-        summary.top().ifPresentOrElse(top -> {
-            topValue.setText(top.category().name());
-            topCaption.setText(Ui.money(top.totalCents()) + " · " + percent(top, summary) + " of the month");
-        }, () -> {
-            topValue.setText("—");
-            topCaption.setText("nothing spent yet");
-        });
+        countValue.setText(Ui.money(summary.incomeCents()));
+        countCaption.setText("income this month");
+        long saved = summary.savedCents();
+        topValue.setText(saved < 0 ? "−" + Ui.money(-saved) : Ui.money(saved));
+        topValue.getStyleClass().removeAll("amount-negative", "amount-positive");
+        topValue.getStyleClass().add(saved < 0 ? "amount-negative" : "amount-positive");
+        savedCaption(summary);
+        summary.top().ifPresentOrElse(
+                top -> topCategory.setText("Most on " + top.category().name() + ", " + percent(top, summary)),
+                () -> topCategory.setText(""));
 
         categoryRows.getChildren().clear();
         if (summary.byCategory().isEmpty()) {
@@ -94,11 +96,17 @@ public final class DashboardController implements Page {
 
         recentRows.getChildren().clear();
         if (recent.isEmpty()) {
-            recentRows.getChildren().add(empty("Your latest expenses will appear here."));
+            recentRows.getChildren().add(empty("Your latest transactions will appear here."));
         }
-        for (Expense expense : recent) {
-            recentRows.getChildren().add(recentRow(expense));
+        for (Transaction transaction : recent) {
+            recentRows.getChildren().add(recentRow(transaction));
         }
+    }
+
+    /** Under the amount kept: the share of income it is, when there was income. */
+    private void savedCaption(MonthSummary summary) {
+        savedLabel.setText(summary.incomeCents() == 0 ? "no income recorded this month"
+                : Math.round(100.0 * summary.savedCents() / summary.incomeCents()) + "% of what came in");
     }
 
     private static String percent(CategoryTotal total, MonthSummary summary) {
@@ -134,21 +142,35 @@ public final class DashboardController implements Page {
         return row;
     }
 
-    /** A recent expense: its category's initial, what and when, and how much. */
-    private static HBox recentRow(Expense expense) {
-        Label badge = new Label(expense.category().name().substring(0, 1).toUpperCase(Locale.ROOT));
-        badge.getStyleClass().add("badge");
-        badge.setStyle("-fx-background-color: " + expense.category().color() + ";");
+    /** A recent transaction: its category's initial (or a transfer), what and when, and how much. */
+    private static HBox recentRow(Transaction t) {
+        Label badge;
+        String kind;
+        if (t.type() == Transaction.Type.TRANSFER) {
+            badge = new Label();
+            badge.setGraphic(Icons.of(Icons.TRANSFER, "badge-icon"));
+            badge.getStyleClass().addAll("badge", "badge-transfer");
+            kind = t.account().name() + " → " + t.toAccount().name();
+        } else {
+            badge = new Label(t.category().name().substring(0, 1).toUpperCase(Locale.ROOT));
+            badge.getStyleClass().add("badge");
+            badge.setStyle("-fx-background-color: " + t.category().color() + ";");
+            kind = t.category().name();
+        }
 
-        Label title = new Label(expense.description());
+        Label title = new Label(t.description());
         title.getStyleClass().add("row-title");
-        Label subtitle = new Label(expense.category().name() + " · " + Ui.date(expense.date()));
+        Label subtitle = new Label(kind + " · " + Ui.date(t.date()));
         subtitle.getStyleClass().add("row-subtitle");
         VBox text = new VBox(2, title, subtitle);
         HBox.setHgrow(text, Priority.ALWAYS);
 
-        Label amount = new Label(Ui.money(expense.amountCents()));
-        amount.getStyleClass().add("row-amount");
+        Label amount = new Label(switch (t.type()) {
+            case EXPENSE -> "−" + Ui.money(t.amountCents());
+            case INCOME -> "+" + Ui.money(t.amountCents());
+            case TRANSFER -> Ui.money(t.amountCents());
+        });
+        amount.getStyleClass().addAll("row-amount", "amount-" + t.type().key());
 
         HBox row = new HBox(12, badge, text, amount);
         row.setAlignment(Pos.CENTER_LEFT);

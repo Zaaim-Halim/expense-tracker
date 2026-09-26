@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.example.expensetracker.model.Category;
-import com.example.expensetracker.model.Expense;
+import com.example.expensetracker.model.Transaction;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -59,17 +59,6 @@ class DatabaseTest {
         return file;
     }
 
-    // What 1.1 runs against the database, word for word, to prove a migrated
-    // file still works for it after a rollback.
-    private static final String V1_INSERT = """
-            INSERT INTO expenses(description, amount_cents, category_id, spent_on, note)
-            VALUES (?, ?, ?, ?, ?)""";
-    private static final String V1_UPDATE = """
-            UPDATE expenses
-            SET description = ?, amount_cents = ?, category_id = ?, spent_on = ?, note = ?
-            WHERE id = ?""";
-    private static final String V1_DELETE = "DELETE FROM expenses WHERE id = ?";
-
     private static int count(Connection connection, String sql) throws SQLException {
         try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery(sql)) {
             rows.next();
@@ -93,7 +82,7 @@ class DatabaseTest {
             new CategoryRepository(database).insert(new Category(0, "Books", "#123456"));
         }
         try (Database database = Database.open(file)) {
-            assertEquals(Database.DEFAULT_CATEGORIES.size() + 1,
+            assertEquals(Database.DEFAULT_CATEGORIES.size() + Database.DEFAULT_INCOME_CATEGORIES.size() + 1,
                     new CategoryRepository(database).findAll().size());
         }
     }
@@ -102,19 +91,72 @@ class DatabaseTest {
     void a_schema_one_file_is_upgraded_in_place_with_every_expense_kept() throws SQLException {
         Path file = schemaOneFile(dir);
         try (Database database = Database.open(file)) {
-            assertEquals(2, database.schemaVersion());
-            List<Expense> expenses = new ExpenseRepository(database).findAll();
-            assertEquals(List.of("test", "Groceries"), expenses.stream().map(Expense::description).toList());
-            assertEquals("kept", expenses.get(0).note());
-            assertTrue(expenses.stream().allMatch(e -> e.tags().isEmpty()));
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            List<Transaction> all = new TransactionRepository(database).findAll();
+            assertEquals(List.of("test", "Groceries"), all.stream().map(Transaction::description).toList());
+            assertEquals("kept", all.get(0).note());
+            assertEquals(List.of(1000L, 4250L), all.stream().map(Transaction::amountCents).toList());
+            assertTrue(all.stream().allMatch(t -> t.type() == Transaction.Type.EXPENSE));
+            assertTrue(all.stream().allMatch(t -> Database.FIRST_ACCOUNT.equals(t.account().name())),
+                    "every expense is in the first account");
+            assertTrue(all.stream().allMatch(t -> t.tags().isEmpty()));
         }
+    }
+
+    @Test
+    void a_schema_two_file_keeps_its_ids_tags_and_notes_when_it_moves_to_accounts() throws SQLException {
+        Path file = schemaOneFile(dir);
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+                Statement statement = connection.createStatement()) {
+            // Schema 2 as 1.2 and 1.3 left it: tags, and the gate still at 1.
+            statement.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+            statement.execute("INSERT INTO meta VALUES ('schema', '2'), ('compatibility', '1')");
+            statement.execute("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)");
+            statement.execute("""
+                    CREATE TABLE expense_tags (
+                        expense_id INTEGER NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+                        tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                        PRIMARY KEY (expense_id, tag_id)
+                    )""");
+            statement.execute("INSERT INTO tags(name) VALUES ('work'), ('travel')");
+            statement.execute("INSERT INTO expense_tags VALUES (2, 1), (2, 2)");
+        }
+        try (Database database = Database.open(file)) {
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            Transaction test = new TransactionRepository(database).findAll().get(0);
+            assertEquals(2, test.id(), "ids are kept");
+            assertEquals(List.of("travel", "work"), test.tags());
+            assertEquals("kept", test.note());
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(Database.COMPATIBILITY, count(after, "PRAGMA user_version"),
+                    "an older version now refuses the file rather than missing the new tables");
+            assertEquals(0, count(after, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'expenses'"));
+        }
+    }
+
+    @Test
+    void an_upgrade_that_fails_halfway_leaves_the_file_exactly_as_it_was() throws Exception {
+        // An expense whose category is gone: possible in a file written with
+        // foreign keys off. The copy into transactions refuses it.
+        Path file = schemaOneFile(dir);
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+                Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = OFF");
+            statement.execute("""
+                    INSERT INTO expenses(description, amount_cents, category_id, spent_on, note)
+                    VALUES ('orphan', 100, 99, '2026-09-26', '')""");
+        }
+        byte[] before = Files.readAllBytes(file);
+        assertThrows(SQLException.class, () -> Database.open(file).close());
+        assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(file)), "the file was changed");
     }
 
     @Test
     void the_file_is_backed_up_as_it_was_before_it_is_upgraded() throws SQLException {
         Path file = schemaOneFile(dir);
         try (Database database = Database.open(file)) {
-            assertEquals(2, database.schemaVersion());
+            assertEquals(Database.SCHEMA, database.schemaVersion());
         }
         Path backup = dir.resolve("expenses.db.schema-1.bak");
         assertTrue(Files.exists(backup), "no backup was made");
@@ -127,14 +169,24 @@ class DatabaseTest {
     }
 
     @Test
-    void an_existing_backup_is_never_replaced() throws Exception {
+    void an_existing_backup_is_never_replaced_nor_taken_for_this_one() throws Exception {
+        // After an upgrade, a rollback and more use, the data upgraded again
+        // is not what the first copy holds: it gets a copy of its own.
         Path file = schemaOneFile(dir);
         Path backup = dir.resolve("expenses.db.schema-1.bak");
         Files.writeString(backup, "an older copy");
         try (Database database = Database.open(file)) {
-            assertEquals(2, database.schemaVersion());
+            assertEquals(Database.SCHEMA, database.schemaVersion());
         }
         assertEquals("an older copy", Files.readString(backup));
+        try (java.util.stream.Stream<Path> files = Files.list(dir)) {
+            List<Path> copies = files.filter(f -> f.getFileName().toString().startsWith("expenses.db.schema-1.")
+                    && !f.equals(backup)).toList();
+            assertEquals(1, copies.size(), "no copy of the data being upgraded was made");
+            try (Connection copy = DriverManager.getConnection("jdbc:sqlite:" + copies.get(0))) {
+                assertEquals(2, count(copy, "SELECT COUNT(*) FROM expenses"));
+            }
+        }
     }
 
     @Test
@@ -144,57 +196,8 @@ class DatabaseTest {
         Path file = schemaOneFile(dir);
         for (int start = 0; start < 3; start++) {
             try (Database database = Database.open(file)) {
-                assertEquals(2, database.schemaVersion());
+                assertEquals(Database.SCHEMA, database.schemaVersion());
             }
-        }
-    }
-
-    @Test
-    void an_older_version_can_still_use_an_upgraded_file() throws SQLException {
-        // The rollback this schema is designed for: 1.2 upgraded the file,
-        // then 1.1 runs again. 1.1 checks the gate, then runs exactly these
-        // statements.
-        Path file = schemaOneFile(dir);
-        try (Database database = Database.open(file)) {
-            ExpenseRepository expenses = new ExpenseRepository(database);
-            Expense tagged = expenses.findAll().get(0);
-            expenses.update(new Expense(tagged.id(), tagged.description(), tagged.amountCents(),
-                    tagged.category(), tagged.date(), tagged.note(), List.of("work", "travel")));
-        }
-        try (Connection old = DriverManager.getConnection("jdbc:sqlite:" + file);
-                Statement statement = old.createStatement()) {
-            statement.execute("PRAGMA foreign_keys = ON");
-            assertEquals(1, count(old, "PRAGMA user_version"), "1.1 would refuse the file");
-
-            try (PreparedStatement insert = old.prepareStatement(V1_INSERT)) {
-                insert.setString(1, "Coffee");
-                insert.setLong(2, 350);
-                insert.setLong(3, 1);
-                insert.setString(4, "2026-09-26");
-                insert.setString(5, "");
-                insert.executeUpdate();
-            }
-            long id = count(old, "SELECT id FROM expenses WHERE description = 'test'");
-            try (PreparedStatement update = old.prepareStatement(V1_UPDATE)) {
-                update.setString(1, "test, renamed");
-                update.setLong(2, 1100);
-                update.setLong(3, 2);
-                update.setString(4, "2026-09-25");
-                update.setString(5, "kept");
-                update.setLong(6, id);
-                update.executeUpdate();
-            }
-            assertEquals(2, count(old, "SELECT COUNT(*) FROM expense_tags"));
-            try (PreparedStatement delete = old.prepareStatement(V1_DELETE)) {
-                delete.setLong(1, id);
-                delete.executeUpdate();
-            }
-            assertEquals(0, count(old, "SELECT COUNT(*) FROM expense_tags"),
-                    "deleting in 1.1 left tag links behind");
-        }
-        try (Database database = Database.open(file)) {
-            assertEquals(List.of("Coffee", "Groceries"),
-                    new ExpenseRepository(database).findAll().stream().map(Expense::description).toList());
         }
     }
 
@@ -203,11 +206,11 @@ class DatabaseTest {
         Path file = dir.resolve("expenses.db");
         try (Database database = Database.open(file);
                 Statement statement = database.connection().createStatement()) {
-            statement.execute("UPDATE meta SET value = '3' WHERE key = 'schema'");
+            statement.execute("UPDATE meta SET value = '" + (Database.SCHEMA + 1) + "' WHERE key = 'schema'");
         }
         try (Database database = Database.open(file)) {
-            assertEquals(3, database.schemaVersion(), "the schema was lowered");
-            assertEquals(1, database.compatibility());
+            assertEquals(Database.SCHEMA + 1, database.schemaVersion(), "the schema was lowered");
+            assertEquals(Database.COMPATIBILITY, database.compatibility());
         }
     }
 
@@ -226,11 +229,13 @@ class DatabaseTest {
     @Test
     void tags_are_kept_matched_ignoring_case_and_dropped_when_unused() throws SQLException {
         try (Database database = Database.open(dir.resolve("expenses.db"))) {
-            ExpenseRepository expenses = new ExpenseRepository(database);
+            TransactionRepository expenses = new TransactionRepository(database);
             Category food = new CategoryRepository(database).findAll().get(0);
-            Expense first = expenses.insert(new Expense(0, "Lunch", 1200, food, LocalDate.of(2026, 9, 1), "",
-                    List.of("Work", " travel ", "work", "")));
-            expenses.insert(new Expense(0, "Taxi", 900, food, LocalDate.of(2026, 9, 2), "", List.of("WORK")));
+            var account = new AccountRepository(database).findAll().get(0);
+            Transaction first = expenses.insert(Transaction.expense(account, 1200, food, "Lunch",
+                    LocalDate.of(2026, 9, 1), "", List.of("Work", " travel ", "work", "")));
+            expenses.insert(Transaction.expense(account, 900, food, "Taxi", LocalDate.of(2026, 9, 2), "",
+                    List.of("WORK")));
 
             assertEquals(List.of("travel", "Work"), expenses.allTags(), "one tag per name, first spelling");
             assertEquals(List.of("travel", "Work"), expenses.findAll().get(1).tags());

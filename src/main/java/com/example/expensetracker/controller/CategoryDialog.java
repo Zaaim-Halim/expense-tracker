@@ -1,7 +1,7 @@
 package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.Category;
-import com.example.expensetracker.service.ExpenseService;
+import com.example.expensetracker.service.LedgerService;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +16,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
@@ -33,18 +34,38 @@ public final class CategoryDialog {
     }
 
     /** Shows the dialog; true when something was saved. */
-    public static boolean show(Window owner, ExpenseService service, Category existing) {
+    public static boolean show(Window owner, LedgerService service, Category existing) {
         return create(owner, service, existing).showAndWait().isPresent();
     }
 
-    static Dialog<Category> create(Window owner, ExpenseService service, Category existing) {
+    static Dialog<Category> create(Window owner, LedgerService service, Category existing) {
         Dialog<Category> dialog = new Dialog<>();
         Ui.style(dialog, owner);
         dialog.getDialogPane().getStyleClass().add("form-dialog");
         dialog.setHeaderText(existing == null ? "New category" : "Edit category");
 
         TextField name = new TextField(existing == null ? "" : existing.name());
-        name.setPromptText("e.g. Groceries");
+        name.setPromptText("e.g. Groceries, Salary");
+
+        ToggleGroup kinds = new ToggleGroup();
+        HBox kind = new HBox();
+        kind.getStyleClass().add("segmented");
+        for (Category.Kind choice : Category.Kind.values()) {
+            ToggleButton button = new ToggleButton(choice == Category.Kind.INCOME ? "Income" : "Expenses");
+            button.setGraphic(Icons.of(choice == Category.Kind.INCOME ? Icons.MONEY_IN : Icons.MONEY_OUT));
+            button.setUserData(choice);
+            button.setToggleGroup(kinds);
+            button.getStyleClass().add("segment");
+            kind.getChildren().add(button);
+        }
+        Category.Kind initialKind = existing == null ? Category.Kind.EXPENSE : existing.kind();
+        kinds.getToggles().stream().filter(t -> t.getUserData() == initialKind).findFirst()
+                .ifPresent(kinds::selectToggle);
+        kinds.selectedToggleProperty().addListener((observable, before, now) -> {
+            if (now == null) {
+                kinds.selectToggle(before);
+            }
+        });
 
         List<String> colors = new ArrayList<>(PALETTE);
         if (existing != null && !colors.contains(existing.color())) {
@@ -76,8 +97,8 @@ public final class CategoryDialog {
         error.setVisible(false);
         error.setManaged(false);
 
-        VBox form = new VBox(14, ExpenseDialog.field("Name", name),
-                ExpenseDialog.field("Colour", palette), error);
+        VBox form = new VBox(14, TransactionDialog.field("Name", name),
+                TransactionDialog.field("Used for", kind), TransactionDialog.field("Colour", palette), error);
         form.getStyleClass().add("form");
         form.setPrefWidth(380);
         dialog.getDialogPane().setContent(form);
@@ -95,7 +116,7 @@ public final class CategoryDialog {
             try {
                 String color = (String) swatches.getSelectedToggle().getUserData();
                 saved[0] = service.save(new Category(existing == null ? 0 : existing.id(),
-                        name.getText(), color));
+                        name.getText(), color, (Category.Kind) kinds.getSelectedToggle().getUserData()));
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);

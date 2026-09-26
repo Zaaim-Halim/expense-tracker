@@ -48,6 +48,29 @@ public final class Ui {
         return chip;
     }
 
+    /** The icon for a kind of account. */
+    static String accountIcon(com.example.expensetracker.model.Account.Kind kind) {
+        return switch (kind) {
+            case CASH -> Icons.WALLET;
+            case BANK -> Icons.BANK;
+            case SAVINGS -> Icons.PIGGY_BANK;
+            case CREDIT_CARD -> Icons.CARD;
+            case LOAN -> Icons.RECEIPT;
+            case INVESTMENT -> Icons.TRENDING_UP;
+        };
+    }
+
+    /**
+     * An account's balance as the user reads it: money held for an asset,
+     * money owed for a credit card or a loan ("Owed 120.00").
+     */
+    static String balance(com.example.expensetracker.model.Account account, long cents) {
+        if (account.kind().liability() && cents < 0) {
+            return "Owed " + money(-cents);
+        }
+        return cents < 0 ? "−" + money(-cents) : money(cents);
+    }
+
     /** A tag, as a small outlined pill. */
     static Node tagChip(String name) {
         Label label = new Label(name);

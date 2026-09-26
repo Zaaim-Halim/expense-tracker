@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.example.expensetracker.controller.AccountsController"
+      styleClass="page" spacing="20">
+  <HBox styleClass="page-header" alignment="CENTER_LEFT" spacing="10">
+    <VBox spacing="4" HBox.hgrow="ALWAYS">
+      <Label text="Accounts" styleClass="page-title"/>
+      <Label fx:id="summaryLabel" styleClass="page-subtitle"/>
+    </VBox>
+    <Button fx:id="newButton" text="New account" styleClass="primary"/>
+  </HBox>
+  <HBox spacing="16" styleClass="stats">
+    <VBox styleClass="card, stat-card, stat-accent" spacing="6" HBox.hgrow="ALWAYS">
+      <Label text="NET WORTH" styleClass="stat-label"/>
+      <Label fx:id="netWorthValue" styleClass="stat-value"/>
+      <Label text="what you have, minus what you owe" styleClass="stat-caption"/>
+    </VBox>
+    <VBox styleClass="card, stat-card" spacing="6" HBox.hgrow="ALWAYS">
+      <Label text="YOU HAVE" styleClass="stat-label"/>
+      <Label fx:id="assetsValue" styleClass="stat-value"/>
+      <Label fx:id="assetsCaption" styleClass="stat-caption"/>
+    </VBox>
+    <VBox styleClass="card, stat-card" spacing="6" HBox.hgrow="ALWAYS">
+      <Label text="YOU OWE" styleClass="stat-label"/>
+      <Label fx:id="owedValue" styleClass="stat-value"/>
+      <Label fx:id="owedCaption" styleClass="stat-caption"/>
+    </VBox>
+  </HBox>
+  <VBox styleClass="card, list-card" VBox.vgrow="ALWAYS">
+    <ListView fx:id="list" VBox.vgrow="ALWAYS" styleClass="category-list"/>
+  </VBox>
+</VBox>

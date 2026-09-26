@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.example.expensetracker.model.Category;
-import com.example.expensetracker.model.Expense;
+import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.Database;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -36,11 +36,12 @@ class DataStoreTest {
 
     private static void add(DataStore store, String description) throws SQLException {
         Category food = store.service().allCategories().get(0);
-        store.service().save(new Expense(0, description, 500, food, LocalDate.of(2026, 9, 26), ""));
+        store.service().save(Transaction.expense(store.service().defaultAccount(), 500, food, description,
+                LocalDate.of(2026, 9, 26), "", List.of()));
     }
 
     private static List<String> descriptions(DataStore store) throws SQLException {
-        return store.service().allExpenses().stream().map(Expense::description).toList();
+        return store.service().allTransactions().stream().map(Transaction::description).toList();
     }
 
     private static void sql(Path file, String statement) throws SQLException {
@@ -60,7 +61,7 @@ class DataStoreTest {
             assertEquals(Backup.Kind.MANUAL, backup.kind());
             Database.FileInfo info = Database.inspect(backup.file());
             assertTrue(info.usable());
-            assertEquals(1, info.expenses(), "the backup holds the data as it was then");
+            assertEquals(1, info.records(), "the backup holds the data as it was then");
             assertEquals(List.of(backup), store.list());
         }
     }
@@ -76,7 +77,7 @@ class DataStoreTest {
 
             assertEquals(List.of("Coffee"), descriptions(store));
             assertEquals(Backup.Kind.BEFORE_RESTORE, before.kind());
-            assertEquals(2, Database.inspect(before.file()).expenses(), "the replaced data was kept");
+            assertEquals(2, Database.inspect(before.file()).records(), "the replaced data was kept");
             // And the restore itself can be undone.
             store.restore(before);
             assertEquals(List.of("Tea", "Coffee"), descriptions(store));
@@ -119,12 +120,12 @@ class DataStoreTest {
     void a_backup_that_cannot_be_opened_after_the_swap_puts_the_original_back() throws Exception {
         try (DataStore store = DataStore.open(data(), backups())) {
             add(store, "Coffee");
-            // A schema-1 file that passes every check before the swap, but
-            // whose upgrade fails when it is opened: it already has a table
-            // the upgrade creates.
+            // A file that passes every check before the swap, but whose
+            // upgrade fails when it is opened: it claims to be schema 1 and
+            // already has the tables the upgrade creates.
             Backup backup = store.backUp(Backup.Kind.MANUAL);
             sql(backup.file(), "DROP TABLE meta");
-            sql(backup.file(), "DROP TABLE expense_tags");
+            sql(backup.file(), "PRAGMA user_version = 1");
             assertTrue(Database.inspect(backup.file()).usable());
 
             assertThrows(SQLException.class, () -> store.restore(backup));

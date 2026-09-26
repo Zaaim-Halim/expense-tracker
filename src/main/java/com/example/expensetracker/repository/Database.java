@@ -36,13 +36,28 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 2;
+    public static final int SCHEMA = 3;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
-     * Schema 2 only added tags, which schema 1's code never looks at.
+     *
+     * <p>Schema 2 only added tags, which schema 1's code never looks at. Schema
+     * 3 moves every expense into {@code transactions} and drops the
+     * {@code expenses} table: code before it would find no expenses, or write
+     * new ones where nothing reads them. So only schema 3's code may open it.
      */
-    public static final int COMPATIBILITY = 1;
+    public static final int COMPATIBILITY = 3;
+
+    /** The name the one account schema 3 creates from existing expenses is given. */
+    public static final String FIRST_ACCOUNT = "Main account";
+
+    /** The income categories schema 3 adds; a name already taken is left alone. */
+    static final List<String[]> DEFAULT_INCOME_CATEGORIES = List.of(
+            new String[] {"Salary", "#16a34a"},
+            new String[] {"Freelance", "#0ea5e9"},
+            new String[] {"Interest", "#8b5cf6"},
+            new String[] {"Gifts", "#ec4899"},
+            new String[] {"Other income", "#64748b"});
 
     /** The categories a new database starts with. */
     static final List<String[]> DEFAULT_CATEGORIES = List.of(
@@ -78,13 +93,14 @@ public final class Database implements AutoCloseable {
      * @param intact        SQLite's own consistency check passed
      * @param compatibility the gate ({@code user_version})
      * @param schema        the tables it has
-     * @param expenses      how many expenses it holds, or -1 if it has no expenses table
+     * @param records       how many expenses or transactions it holds, whichever
+     *                      its schema keeps, or -1 if it has neither table
      */
-    public record FileInfo(boolean intact, int compatibility, int schema, int expenses) {
+    public record FileInfo(boolean intact, int compatibility, int schema, int records) {
 
         /** Whether this version can use the file: whole, with its tables, and not too new. */
         public boolean usable() {
-            return intact && expenses >= 0 && compatibility >= 1 && compatibility <= SCHEMA;
+            return intact && records >= 0 && compatibility >= 1 && compatibility <= SCHEMA;
         }
     }
 
@@ -142,15 +158,19 @@ public final class Database implements AutoCloseable {
                     ResultSet rows = statement.executeQuery("PRAGMA quick_check")) {
                 intact = rows.next() && "ok".equals(rows.getString(1));
             }
-            int expenses = -1;
-            if (database.hasTable("expenses")) {
-                try (Statement statement = connection.createStatement();
-                        ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM expenses")) {
-                    rows.next();
-                    expenses = rows.getInt(1);
+            // Whichever table the file's schema keeps its records in.
+            int records = -1;
+            for (String table : List.of("transactions", "expenses")) {
+                if (database.hasTable(table)) {
+                    try (Statement statement = connection.createStatement();
+                            ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+                        rows.next();
+                        records = rows.getInt(1);
+                    }
+                    break;
                 }
             }
-            return new FileInfo(intact, database.compatibility(), database.schemaVersion(), expenses);
+            return new FileInfo(intact, database.compatibility(), database.schemaVersion(), records);
         } catch (SQLException | RuntimeException e) {
             return new FileInfo(false, 0, 0, -1);
         }
@@ -236,6 +256,9 @@ public final class Database implements AutoCloseable {
             if (schema < 2) {
                 addTags();
             }
+            if (schema < 3) {
+                moveToAccounts();
+            }
             connection.commit();
         } catch (SQLException e) {
             connection.rollback();
@@ -247,13 +270,21 @@ public final class Database implements AutoCloseable {
 
     /**
      * Keeps a copy of the file as it is, before it is changed. An existing
-     * copy is never replaced: it is the older of the two, from before an
-     * attempt that did not finish.
+     * copy is never replaced, and never taken for this one: after an upgrade,
+     * a rollback and more use, the data being upgraded again is not the data
+     * that copy holds. So a second copy gets the time in its name.
      */
     private void backUp(Path file, int schema) throws SQLException {
-        Path backup = file.toAbsolutePath().resolveSibling(file.getFileName() + ".schema-" + schema + ".bak");
+        Path folder = file.toAbsolutePath().getParent();
+        String base = file.getFileName() + ".schema-" + schema;
+        Path backup = folder.resolve(base + ".bak");
         if (Files.exists(backup)) {
-            return;
+            String stamp = java.time.LocalDateTime.now().format(
+                    java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+            backup = folder.resolve(base + "." + stamp + ".bak");
+            for (int n = 2; Files.exists(backup); n++) {
+                backup = folder.resolve(base + "." + stamp + "-" + n + ".bak");
+            }
         }
         // Outside any transaction, which VACUUM INTO requires. It writes a
         // complete, consistent copy of the open database.
@@ -319,6 +350,87 @@ public final class Database implements AutoCloseable {
                         value TEXT NOT NULL
                     )""");
             statement.execute("INSERT INTO meta(key, value) VALUES ('schema', '2')");
+        }
+    }
+
+    /**
+     * Schema 3: accounts and transactions. Every expense becomes an expense
+     * transaction in one account, keeping its id so its tags follow it
+     * unchanged. All in the transaction {@link #migrate} opened, gate
+     * included: a failure anywhere leaves the file exactly as it was, still
+     * usable by the version before.
+     */
+    private void moveToAccounts() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE categories ADD COLUMN kind TEXT NOT NULL DEFAULT 'expense' "
+                    + "CHECK (kind IN ('expense', 'income'))");
+            statement.execute("""
+                    CREATE TABLE accounts (
+                        id            INTEGER PRIMARY KEY,
+                        name          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                        kind          TEXT NOT NULL CHECK (kind IN ('cash', 'bank', 'savings',
+                                          'credit_card', 'loan', 'investment')),
+                        currency      TEXT NOT NULL DEFAULT '',
+                        opening_cents INTEGER NOT NULL DEFAULT 0
+                    )""");
+            statement.execute("""
+                    CREATE TABLE transactions (
+                        id              INTEGER PRIMARY KEY,
+                        type            TEXT NOT NULL CHECK (type IN ('expense', 'income', 'transfer')),
+                        account_id      INTEGER NOT NULL REFERENCES accounts(id),
+                        amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+                        to_account_id   INTEGER REFERENCES accounts(id),
+                        to_amount_cents INTEGER CHECK (to_amount_cents > 0),
+                        category_id     INTEGER REFERENCES categories(id),
+                        merchant        TEXT NOT NULL DEFAULT '',
+                        description     TEXT NOT NULL,
+                        occurred_on     TEXT NOT NULL,
+                        note            TEXT NOT NULL DEFAULT '',
+                        CHECK ((type = 'transfer' AND to_account_id IS NOT NULL
+                                    AND to_amount_cents IS NOT NULL AND category_id IS NULL
+                                    AND to_account_id <> account_id)
+                            OR (type <> 'transfer' AND to_account_id IS NULL
+                                    AND to_amount_cents IS NULL AND category_id IS NOT NULL))
+                    )""");
+            statement.execute("""
+                    CREATE TABLE transaction_tags (
+                        transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+                        tag_id         INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                        PRIMARY KEY (transaction_id, tag_id)
+                    )""");
+        }
+        try (PreparedStatement account = connection.prepareStatement(
+                "INSERT INTO accounts(name, kind) VALUES (?, 'bank')")) {
+            account.setString(1, FIRST_ACCOUNT);
+            account.executeUpdate();
+        }
+        try (PreparedStatement income = connection.prepareStatement(
+                "INSERT OR IGNORE INTO categories(name, color, kind) VALUES (?, ?, 'income')")) {
+            for (String[] category : DEFAULT_INCOME_CATEGORIES) {
+                income.setString(1, category[0]);
+                income.setString(2, category[1]);
+                income.addBatch();
+            }
+            income.executeBatch();
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    INSERT INTO transactions(id, type, account_id, amount_cents, category_id,
+                                             description, occurred_on, note)
+                    SELECT e.id, 'expense', (SELECT MIN(id) FROM accounts), e.amount_cents,
+                           e.category_id, e.description, e.spent_on, e.note
+                    FROM expenses e""");
+            statement.execute("""
+                    INSERT INTO transaction_tags(transaction_id, tag_id)
+                    SELECT expense_id, tag_id FROM expense_tags""");
+            statement.execute("DROP TABLE expense_tags");
+            statement.execute("DROP TABLE expenses");
+            statement.execute("CREATE INDEX transactions_by_date ON transactions(occurred_on)");
+            statement.execute("CREATE INDEX transactions_by_account ON transactions(account_id)");
+            statement.execute("CREATE INDEX transactions_by_destination ON transactions(to_account_id)");
+            statement.execute("CREATE INDEX transaction_tags_by_tag ON transaction_tags(tag_id)");
+            statement.execute("UPDATE meta SET value = '3' WHERE key = 'schema'");
+            statement.execute("PRAGMA user_version = 3");
         }
     }
 

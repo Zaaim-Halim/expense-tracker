@@ -5,7 +5,7 @@ package com.example.expensetracker.model;
  *
  * @param category   the category
  * @param totalCents the sum, in cents
- * @param count      how many expenses
+ * @param count      how many transactions
  */
 public record CategoryTotal(Category category, long totalCents, int count) {
 }

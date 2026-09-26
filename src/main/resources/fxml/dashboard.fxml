@@ -16,35 +16,39 @@
         <Label text="Dashboard" styleClass="page-title"/>
         <Label fx:id="monthLabel" styleClass="page-subtitle"/>
       </VBox>
-      <Button fx:id="newExpenseButton" text="New expense" styleClass="primary"/>
+      <Button fx:id="newExpenseButton" text="New transaction" styleClass="primary"/>
     </HBox>
 
     <HBox spacing="16" styleClass="stats">
       <VBox styleClass="card, stat-card, stat-accent" spacing="6" HBox.hgrow="ALWAYS">
-        <Label text="THIS MONTH" styleClass="stat-label"/>
+        <Label text="SPENT THIS MONTH" styleClass="stat-label"/>
         <Label fx:id="totalValue" styleClass="stat-value"/>
         <Label fx:id="totalCaption" styleClass="stat-caption"/>
       </VBox>
       <VBox styleClass="card, stat-card" spacing="6" HBox.hgrow="ALWAYS">
-        <Label text="EXPENSES" styleClass="stat-label"/>
+        <Label text="RECEIVED" styleClass="stat-label"/>
         <Label fx:id="countValue" styleClass="stat-value"/>
         <Label fx:id="countCaption" styleClass="stat-caption"/>
       </VBox>
       <VBox styleClass="card, stat-card" spacing="6" HBox.hgrow="ALWAYS">
-        <Label text="TOP CATEGORY" styleClass="stat-label"/>
+        <Label text="SAVED" styleClass="stat-label"/>
         <Label fx:id="topValue" styleClass="stat-value"/>
-        <Label fx:id="topCaption" styleClass="stat-caption"/>
+        <Label fx:id="savedLabel" styleClass="stat-caption"/>
       </VBox>
     </HBox>
 
     <HBox spacing="16">
       <VBox styleClass="card" spacing="16" HBox.hgrow="ALWAYS" prefWidth="520">
-        <Label text="Spending by category" styleClass="card-title"/>
+        <HBox alignment="CENTER_LEFT">
+          <Label text="Spending by category" styleClass="card-title"/>
+          <Region HBox.hgrow="ALWAYS"/>
+          <Label fx:id="topCategory" styleClass="stat-caption"/>
+        </HBox>
         <VBox fx:id="categoryRows" spacing="14"/>
       </VBox>
       <VBox styleClass="card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="420">
         <HBox alignment="CENTER_LEFT">
-          <Label text="Recent expenses" styleClass="card-title"/>
+          <Label text="Recent transactions" styleClass="card-title"/>
           <Region HBox.hgrow="ALWAYS"/>
           <Button fx:id="showAllButton" text="See all" styleClass="link"/>
         </HBox>
