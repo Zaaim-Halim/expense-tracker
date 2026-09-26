@@ -160,7 +160,7 @@ public final class TransactionDialog {
         currentRates.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
         currentRates.getStyleClass().add("icon-button");
         currentRates.setTooltip(new javafx.scene.control.Tooltip("Current rates"));
-        currentRates.setOnAction(event -> RatesInUseDialog.show(dialog.getDialogPane().getScene().getWindow(), service));
+        currentRates.setOnAction(event -> RatesDialog.show(dialog.getDialogPane().getScene().getWindow(), service));
         HBox rateInput = new HBox(6, rate, currentRates);
         HBox.setHgrow(rate, Priority.ALWAYS);
         rateInput.setAlignment(javafx.geometry.Pos.CENTER_LEFT);

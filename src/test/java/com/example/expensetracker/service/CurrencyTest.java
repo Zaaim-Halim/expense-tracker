@@ -444,4 +444,39 @@ class CurrencyTest {
         assertEquals(List.of("ALL"), result.missing());
         assertTrue(result.problem().contains("503"), result.problem());
     }
+
+    @Test
+    void rates_against_another_currency_are_worked_out_through_the_base_and_say_so() throws SQLException {
+        LocalDate today = LocalDate.of(2026, 9, 26);
+        service.saveRate(new ExchangeRate("USD", SEP_1, new BigDecimal("0.8")));
+        service.saveRate(new ExchangeRate("JPY", SEP_1, new BigDecimal("0.005")));
+
+        assertEquals(List.of("EUR", "JPY", "USD"), service.currenciesWithRates(today));
+
+        List<LedgerService.CrossRate> inEuros = service.ratesAgainst("EUR", today);
+        assertEquals(List.of("JPY", "USD"), inEuros.stream().map(LedgerService.CrossRate::code).toList());
+        assertEquals(0, new BigDecimal("0.8").compareTo(inEuros.get(1).rate()));
+        assertEquals(null, inEuros.get(1).via(), "in the base, nothing is worked out through anything");
+
+        List<LedgerService.CrossRate> inDollars = service.ratesAgainst("USD", today);
+        assertEquals(List.of("EUR", "JPY"), inDollars.stream().map(LedgerService.CrossRate::code).toList());
+        assertEquals(0, new BigDecimal("1.25").compareTo(inDollars.get(0).rate()), "1 EUR = 1 / 0.8 USD");
+        assertEquals(null, inDollars.get(0).leg(), "the base has no rate of its own");
+        assertEquals(0, new BigDecimal("0.00625").compareTo(inDollars.get(1).rate()), "1 JPY = 0.005 / 0.8 USD");
+        assertEquals(ExchangeRate.Source.MANUAL, inDollars.get(1).leg().source());
+        assertEquals(SEP_1, inDollars.get(1).via().effectiveOn(), "it says which rate it went through");
+
+        assertThrows(IllegalArgumentException.class, () -> service.ratesAgainst("USD", SEP_1.minusDays(1)),
+                "no dollar rate yet that day");
+    }
+
+    @Test
+    void a_currency_with_no_rate_is_listed_with_none() throws SQLException {
+        LocalDate today = LocalDate.of(2026, 9, 26);
+        service.saveRate(new ExchangeRate("USD", SEP_1, new BigDecimal("0.8")));
+        List<LedgerService.CrossRate> inDollars = service.ratesAgainst("USD", today);
+        LedgerService.CrossRate yen = inDollars.stream().filter(r -> r.code().equals("JPY")).findFirst().orElseThrow();
+        assertEquals(null, yen.rate());
+        assertEquals(List.of("EUR", "USD"), service.currenciesWithRates(today));
+    }
 }

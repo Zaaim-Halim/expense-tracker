@@ -13,7 +13,7 @@
             fx:controller="com.example.expensetracker.controller.MainController"
             styleClass="app">
   <left>
-    <VBox styleClass="sidebar" spacing="4">
+    <VBox fx:id="sidebar" styleClass="sidebar" spacing="2">
       <HBox styleClass="brand" spacing="10" alignment="CENTER_LEFT">
         <Label fx:id="brandIcon" styleClass="brand-mark"/>
         <Label text="Expense Tracker" styleClass="brand-name"/>
@@ -22,14 +22,18 @@
       <ToggleButton fx:id="dashboardNav" text="Dashboard" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="transactionsNav" text="Transactions" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="accountsNav" text="Accounts" styleClass="nav-item" maxWidth="Infinity"/>
+      <ToggleButton fx:id="calendarNav" text="Calendar" styleClass="nav-item" maxWidth="Infinity"/>
+      <ToggleButton fx:id="reportsNav" text="Reports" styleClass="nav-item" maxWidth="Infinity"/>
+      <Label text="PLANNING" styleClass="nav-heading, nav-heading-spaced"/>
       <ToggleButton fx:id="budgetsNav" text="Budgets" styleClass="nav-item" maxWidth="Infinity"/>
+      <ToggleButton fx:id="goalsNav" text="Savings goals" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="recurringNav" text="Recurring" styleClass="nav-item" maxWidth="Infinity"/>
+      <Label text="SETUP" styleClass="nav-heading, nav-heading-spaced"/>
       <ToggleButton fx:id="categoriesNav" text="Categories" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="currenciesNav" text="Currencies" styleClass="nav-item" maxWidth="Infinity"/>
-      <Label text="PREFERENCES" styleClass="nav-heading, nav-heading-spaced"/>
       <ToggleButton fx:id="settingsNav" text="Settings" styleClass="nav-item" maxWidth="Infinity"/>
       <Region VBox.vgrow="ALWAYS"/>
-      <VBox styleClass="sidebar-footer" spacing="2">
+      <VBox fx:id="sidebarFooter" styleClass="sidebar-footer" spacing="2">
         <Label text="Packaged with xPack" styleClass="footer-title"/>
         <Label fx:id="versionLabel" styleClass="footer-version"/>
       </VBox>

@@ -73,5 +73,13 @@
         <VBox fx:id="comingRows" spacing="6"/>
       </VBox>
     </HBox>
+    <VBox fx:id="goalCard" styleClass="card" spacing="14">
+      <HBox alignment="CENTER_LEFT">
+        <Label text="Savings goals" styleClass="card-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="goalsButton" text="All goals" styleClass="link"/>
+      </HBox>
+      <VBox fx:id="goalRows" spacing="14"/>
+    </VBox>
   </VBox>
 </ScrollPane>

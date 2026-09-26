@@ -414,4 +414,29 @@ class DatabaseTest {
             assertEquals(5, count(after, "PRAGMA user_version"), "only additions, so 2.2 and 2.3 may still open it");
         }
     }
+
+    @Test
+    void a_schema_seven_file_gets_goals_and_debts_and_its_income_bills_become_regular_income() throws Exception {
+        Path file = dir.resolve("expenses.db");
+        // Written by the real 2.4.0: a salary marked as a bill, which was the
+        // only way to list it then, a rent bill and income that was neither.
+        try (java.io.InputStream in = DatabaseTest.class.getResourceAsStream("/schema-7.db")) {
+            Files.copy(in, file);
+        }
+        try (Database database = Database.open(file)) {
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            var rules = new RecurringRepository(database).findAll();
+            assertEquals(List.of("Rent:bill", "Salary:bill:income", "Side job"), rules.stream()
+                    .map(rule -> rule.description() + (rule.bill() ? ":bill" : "") + (rule.regularIncome() ? ":income" : ""))
+                    .toList());
+            assertEquals(List.of(3, 3, 3), rules.stream().map(com.example.expensetracker.model.Recurring::done).toList());
+            assertEquals(9, new TransactionRepository(database).findAll().size());
+            assertEquals(1, new BudgetRepository(database).findAll().size());
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(0, count(after, "SELECT COUNT(*) FROM goals"));
+            assertEquals(0, count(after, "SELECT COUNT(*) FROM debts"));
+            assertEquals(5, count(after, "PRAGMA user_version"), "only additions, so 2.2 to 2.4 may still open it");
+        }
+    }
 }

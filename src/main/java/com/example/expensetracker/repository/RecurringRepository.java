@@ -20,6 +20,7 @@ public final class RecurringRepository {
     private static final String SELECT = """
             SELECT r.id, r.type, r.amount_cents, r.to_amount_cents, r.merchant, r.description, r.note,
                    r.frequency, r.every, r.starts_on, r.ends_on, r.done, r.bill, r.ask_first, r.paused,
+                   r.regular_income,
                    a.id AS a_id, a.name AS a_name, a.kind AS a_kind, a.currency AS a_currency,
                    a.opening_cents AS a_opening,
                    b.id AS b_id, b.name AS b_name, b.kind AS b_kind, b.currency AS b_currency,
@@ -55,8 +56,8 @@ public final class RecurringRepository {
         try (PreparedStatement insert = connection.prepareStatement("""
                 INSERT INTO recurring(type, account_id, amount_cents, to_account_id, to_amount_cents,
                                       category_id, merchant, description, note, frequency, every,
-                                      starts_on, ends_on, done, bill, ask_first, paused)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+                                      starts_on, ends_on, done, bill, ask_first, paused, regular_income)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
             bind(insert, rule);
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
@@ -71,10 +72,10 @@ public final class RecurringRepository {
                 UPDATE recurring SET type = ?, account_id = ?, amount_cents = ?, to_account_id = ?,
                     to_amount_cents = ?, category_id = ?, merchant = ?, description = ?, note = ?,
                     frequency = ?, every = ?, starts_on = ?, ends_on = ?, done = ?, bill = ?,
-                    ask_first = ?, paused = ?
+                    ask_first = ?, paused = ?, regular_income = ?
                 WHERE id = ?""")) {
             bind(update, rule);
-            update.setLong(18, rule.id());
+            update.setLong(19, rule.id());
             update.executeUpdate();
         }
     }
@@ -198,6 +199,7 @@ public final class RecurringRepository {
         statement.setInt(15, rule.bill() ? 1 : 0);
         statement.setInt(16, rule.askFirst() ? 1 : 0);
         statement.setInt(17, rule.paused() ? 1 : 0);
+        statement.setInt(18, rule.regularIncome() ? 1 : 0);
     }
 
     private static Recurring read(ResultSet rows) throws SQLException {
@@ -216,7 +218,7 @@ public final class RecurringRepository {
                 Recurring.Frequency.fromKey(rows.getString("frequency")), rows.getInt("every"),
                 LocalDate.parse(rows.getString("starts_on")), ends == null ? null : LocalDate.parse(ends),
                 rows.getInt("done"), rows.getInt("bill") == 1, rows.getInt("ask_first") == 1,
-                rows.getInt("paused") == 1);
+                rows.getInt("paused") == 1, rows.getInt("regular_income") == 1);
     }
 
     private interface Work<T> {

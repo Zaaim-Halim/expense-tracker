@@ -16,6 +16,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 
 /** The sidebar, and the page it shows. */
 public final class MainController {
@@ -25,7 +26,10 @@ public final class MainController {
         DASHBOARD("/fxml/dashboard.fxml"),
         TRANSACTIONS("/fxml/transactions.fxml"),
         ACCOUNTS("/fxml/accounts.fxml"),
+        CALENDAR("/fxml/calendar.fxml"),
+        REPORTS("/fxml/reports.fxml"),
         BUDGETS("/fxml/budgets.fxml"),
+        GOALS("/fxml/goals.fxml"),
         RECURRING("/fxml/recurring.fxml"),
         CATEGORIES("/fxml/categories.fxml"),
         CURRENCIES("/fxml/currencies.fxml"),
@@ -42,13 +46,18 @@ public final class MainController {
     @FXML private ToggleButton dashboardNav;
     @FXML private ToggleButton transactionsNav;
     @FXML private ToggleButton accountsNav;
+    @FXML private ToggleButton calendarNav;
+    @FXML private ToggleButton reportsNav;
     @FXML private ToggleButton budgetsNav;
+    @FXML private ToggleButton goalsNav;
     @FXML private ToggleButton recurringNav;
     @FXML private ToggleButton categoriesNav;
     @FXML private ToggleButton currenciesNav;
     @FXML private ToggleButton settingsNav;
     @FXML private Label brandIcon;
     @FXML private Label versionLabel;
+    @FXML private VBox sidebar;
+    @FXML private VBox sidebarFooter;
 
     private final ToggleGroup navigation = new ToggleGroup();
     private final Map<Section, Parent> roots = new EnumMap<>(Section.class);
@@ -61,7 +70,10 @@ public final class MainController {
         dashboardNav.setGraphic(Icons.of(Icons.DASHBOARD));
         transactionsNav.setGraphic(Icons.of(Icons.LIST));
         accountsNav.setGraphic(Icons.of(Icons.WALLET));
+        calendarNav.setGraphic(Icons.of(Icons.CALENDAR));
+        reportsNav.setGraphic(Icons.of(Icons.BAR_CHART));
         budgetsNav.setGraphic(Icons.of(Icons.PIE_CHART));
+        goalsNav.setGraphic(Icons.of(Icons.FLAG));
         recurringNav.setGraphic(Icons.of(Icons.REPEAT));
         categoriesNav.setGraphic(Icons.of(Icons.TAG));
         currenciesNav.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
@@ -69,7 +81,10 @@ public final class MainController {
         dashboardNav.setTooltip(new Tooltip(Shortcuts.hint("Dashboard", Shortcuts.DASHBOARD)));
         transactionsNav.setTooltip(new Tooltip(Shortcuts.hint("Transactions", Shortcuts.TRANSACTIONS)));
         accountsNav.setTooltip(new Tooltip(Shortcuts.hint("Accounts", Shortcuts.ACCOUNTS)));
+        calendarNav.setTooltip(new Tooltip(Shortcuts.hint("Calendar", Shortcuts.CALENDAR)));
+        reportsNav.setTooltip(new Tooltip(Shortcuts.hint("Reports", Shortcuts.REPORTS)));
         budgetsNav.setTooltip(new Tooltip(Shortcuts.hint("Budgets", Shortcuts.BUDGETS)));
+        goalsNav.setTooltip(new Tooltip(Shortcuts.hint("Savings goals", Shortcuts.GOALS)));
         recurringNav.setTooltip(new Tooltip(Shortcuts.hint("Recurring", Shortcuts.RECURRING)));
         categoriesNav.setTooltip(new Tooltip(Shortcuts.hint("Categories", Shortcuts.CATEGORIES)));
         currenciesNav.setTooltip(new Tooltip(Shortcuts.hint("Currencies", Shortcuts.CURRENCIES)));
@@ -80,8 +95,8 @@ public final class MainController {
         logo.setFitHeight(34);
         logo.setSmooth(true);
         brandIcon.setGraphic(logo);
-        for (ToggleButton button : new ToggleButton[] {dashboardNav, transactionsNav, accountsNav, budgetsNav,
-            recurringNav, categoriesNav, currenciesNav, settingsNav}) {
+        for (ToggleButton button : new ToggleButton[] {dashboardNav, transactionsNav, accountsNav, calendarNav,
+            reportsNav, budgetsNav, goalsNav, recurringNav, categoriesNav, currenciesNav, settingsNav}) {
             button.setToggleGroup(navigation);
         }
         // A section stays selected: clicking the current one again is not "none".
@@ -93,7 +108,17 @@ public final class MainController {
             }
         });
         versionLabel.setText("Version " + AppInfo.version());
+        // In a short window the pages matter more than the version: the
+        // footer steps aside rather than pushing the last entries off.
+        sidebar.heightProperty().addListener((observable, before, now) -> {
+            boolean room = now.doubleValue() >= FOOTER_HEIGHT;
+            sidebarFooter.setVisible(room);
+            sidebarFooter.setManaged(room);
+        });
     }
+
+    /** The sidebar's height below which its footer is left out. */
+    private static final double FOOTER_HEIGHT = 700;
 
     public void setup(LedgerService ledger) {
         this.service = ledger;
@@ -133,7 +158,10 @@ public final class MainController {
         scene.getAccelerators().put(Shortcuts.DASHBOARD, () -> select(Section.DASHBOARD));
         scene.getAccelerators().put(Shortcuts.TRANSACTIONS, () -> select(Section.TRANSACTIONS));
         scene.getAccelerators().put(Shortcuts.ACCOUNTS, () -> select(Section.ACCOUNTS));
+        scene.getAccelerators().put(Shortcuts.CALENDAR, () -> select(Section.CALENDAR));
+        scene.getAccelerators().put(Shortcuts.REPORTS, () -> select(Section.REPORTS));
         scene.getAccelerators().put(Shortcuts.BUDGETS, () -> select(Section.BUDGETS));
+        scene.getAccelerators().put(Shortcuts.GOALS, () -> select(Section.GOALS));
         scene.getAccelerators().put(Shortcuts.RECURRING, () -> select(Section.RECURRING));
         scene.getAccelerators().put(Shortcuts.CATEGORIES, () -> select(Section.CATEGORIES));
         scene.getAccelerators().put(Shortcuts.CURRENCIES, () -> select(Section.CURRENCIES));
@@ -157,7 +185,10 @@ public final class MainController {
             case DASHBOARD -> dashboardNav;
             case TRANSACTIONS -> transactionsNav;
             case ACCOUNTS -> accountsNav;
+            case CALENDAR -> calendarNav;
+            case REPORTS -> reportsNav;
             case BUDGETS -> budgetsNav;
+            case GOALS -> goalsNav;
             case RECURRING -> recurringNav;
             case CATEGORIES -> categoriesNav;
             case CURRENCIES -> currenciesNav;
@@ -172,8 +203,17 @@ public final class MainController {
         if (toggle == accountsNav) {
             return Section.ACCOUNTS;
         }
+        if (toggle == calendarNav) {
+            return Section.CALENDAR;
+        }
+        if (toggle == reportsNav) {
+            return Section.REPORTS;
+        }
         if (toggle == budgetsNav) {
             return Section.BUDGETS;
+        }
+        if (toggle == goalsNav) {
+            return Section.GOALS;
         }
         if (toggle == recurringNav) {
             return Section.RECURRING;
@@ -205,13 +245,19 @@ public final class MainController {
             page.setup(service, this::dataChanged);
             if (page instanceof DashboardController dashboard) {
                 dashboard.onShowAll(() -> select(Section.TRANSACTIONS));
-                dashboard.onShowPlans(() -> select(Section.BUDGETS), () -> select(Section.RECURRING));
+                dashboard.onShowPlans(() -> select(Section.BUDGETS), () -> select(Section.RECURRING),
+                        () -> select(Section.GOALS));
             }
             pages.put(section, page);
             return root;
         } catch (IOException e) {
             throw new IllegalStateException("the " + section + " page could not be built", e);
         }
+    }
+
+    /** A page that has been shown, for the screen renderer. */
+    Page page(Section section) {
+        return pages.get(section);
     }
 
     /** Shows what changed outside the window's own actions, such as items recorded at start. */

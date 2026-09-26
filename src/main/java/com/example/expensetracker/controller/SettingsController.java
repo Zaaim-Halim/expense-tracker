@@ -69,7 +69,7 @@ public final class SettingsController implements Page {
         baseCurrency.setup(service, dataChanged);
         moneyRows.getChildren().setAll(row("Base currency", CurrenciesController.BASE_HINT
                 + " Rates and other currencies are under Currencies.", baseCurrency.control()));
-        buildRatesRows(dataChanged);
+        buildRatesRows(service, dataChanged);
         HBox themes = new HBox();
         themes.getStyleClass().add("segmented");
         for (Settings.Theme choice : Settings.Theme.values()) {
@@ -171,7 +171,7 @@ public final class SettingsController implements Page {
 
     // --- exchange rates online ---------------------------------------------------
 
-    private void buildRatesRows(Runnable dataChanged) {
+    private void buildRatesRows(LedgerService service, Runnable dataChanged) {
         HBox onOff = new HBox();
         onOff.getStyleClass().add("segmented");
         for (boolean on : new boolean[] {true, false}) {
@@ -209,7 +209,13 @@ public final class SettingsController implements Page {
         VBox text = new VBox(3, latest, ratesStatus);
         text.setMinWidth(220);
         HBox.setHgrow(text, Priority.ALWAYS);
-        HBox status = new HBox(24, text, updateRates);
+        Button seeRates = new Button("See rates");
+        seeRates.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
+        seeRates.getStyleClass().add("secondary");
+        seeRates.setTooltip(new javafx.scene.control.Tooltip(
+                "Today's rates, in the base or another currency, with where each came from"));
+        seeRates.setOnAction(event -> RatesDialog.show(seeRates.getScene().getWindow(), service));
+        HBox status = new HBox(10, text, seeRates, updateRates);
         status.setAlignment(Pos.CENTER_LEFT);
         status.getStyleClass().add("setting-row");
 

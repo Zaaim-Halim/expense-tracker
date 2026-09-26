@@ -36,7 +36,7 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 7;
+    public static final int SCHEMA = 8;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
@@ -64,6 +64,11 @@ public final class Database implements AutoCloseable {
      * own, and a link from a transaction to the rule that recorded it. Schema
      * 5's code never reads them and adds transactions without the link, which
      * is what a transaction entered by hand is. So it may still open it.
+     *
+     * <p>Schema 8 adds savings goals and debts' details, in tables of their
+     * own that let an account be deleted under them, and a column with a
+     * default on recurring transactions, which schema 7's code leaves alone
+     * when it changes a rule. So schema 5's code may still open it.
      */
     public static final int COMPATIBILITY = 5;
 
@@ -296,6 +301,9 @@ public final class Database implements AutoCloseable {
             }
             if (schema < 7) {
                 addBudgetsAndRecurring();
+            }
+            if (schema < 8) {
+                addGoalsAndDebts();
             }
             connection.commit();
         } catch (SQLException e) {
@@ -604,6 +612,46 @@ public final class Database implements AutoCloseable {
             statement.execute("CREATE INDEX recurring_by_destination ON recurring(to_account_id)");
             statement.execute("CREATE INDEX recurring_by_category ON recurring(category_id)");
             statement.execute("UPDATE meta SET value = '7' WHERE key = 'schema'");
+        }
+    }
+
+    /**
+     * Schema 8: savings goals, what is known of a debt, and regular income
+     * among recurring transactions. Additive: see {@link #COMPATIBILITY}.
+     *
+     * <p>Both new tables let their account go: a goal forgets it and keeps
+     * what it had saved, and a debt's details go with it. So the version
+     * before, which knows nothing of either, can still delete an account.
+     */
+    private void addGoalsAndDebts() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE goals (
+                        id           INTEGER PRIMARY KEY,
+                        name         TEXT NOT NULL,
+                        target_cents INTEGER NOT NULL CHECK (target_cents > 0),
+                        currency     TEXT NOT NULL,
+                        account_id   INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+                        saved_cents  INTEGER NOT NULL DEFAULT 0 CHECK (saved_cents >= 0),
+                        target_date  TEXT,
+                        color        TEXT NOT NULL,
+                        created_on   TEXT NOT NULL
+                    )""");
+            statement.execute("""
+                    CREATE TABLE debts (
+                        account_id    INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+                        limit_cents   INTEGER CHECK (limit_cents > 0),
+                        apr           TEXT,
+                        minimum_cents INTEGER CHECK (minimum_cents > 0),
+                        due_day       INTEGER CHECK (due_day BETWEEN 1 AND 31)
+                    )""");
+            statement.execute("CREATE INDEX goals_by_account ON goals(account_id)");
+            statement.execute("ALTER TABLE recurring ADD COLUMN regular_income INTEGER NOT NULL DEFAULT 0");
+            // Income marked as a bill was the only way to list it before: it
+            // is regular income now. The bill mark stays, for the version
+            // before, which still reads it.
+            statement.execute("UPDATE recurring SET regular_income = 1 WHERE type = 'income' AND bill = 1");
+            statement.execute("UPDATE meta SET value = '8' WHERE key = 'schema'");
         }
     }
 

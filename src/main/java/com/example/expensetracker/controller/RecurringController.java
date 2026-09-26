@@ -34,6 +34,9 @@ public final class RecurringController implements Page {
     @FXML private VBox waitingRows;
     @FXML private Label billsTotal;
     @FXML private VBox billRows;
+    @FXML private VBox incomeCard;
+    @FXML private Label incomeTotal;
+    @FXML private VBox incomeRows;
     @FXML private VBox ruleRows;
 
     private LedgerService service;
@@ -52,10 +55,12 @@ public final class RecurringController implements Page {
         LocalDate today = LocalDate.now();
         List<LedgerService.Due> waiting;
         List<LedgerService.Due> bills;
+        List<LedgerService.Due> income;
         List<Recurring> rules;
         try {
             waiting = service.waiting(today);
             bills = service.upcomingBills(today, BILL_DAYS);
+            income = service.upcomingIncome(today, BILL_DAYS);
             rules = service.allRecurring();
         } catch (SQLException e) {
             Ui.error(window(), "Your recurring transactions could not be read", e.getMessage());
@@ -67,7 +72,14 @@ public final class RecurringController implements Page {
 
         billRows.getChildren().setAll(bills.isEmpty() ? List.of(note("No bills in the next " + BILL_DAYS + " days."))
                 : bills.stream().map(RecurringController::billRow).toList());
-        billsTotal.setText(bills.isEmpty() ? "" : total(bills, today));
+        billsTotal.setText(bills.isEmpty() ? "" : total(bills, Transaction.Type.EXPENSE, today));
+
+        // Only once some income is marked as regular: until then it would
+        // only say there is none.
+        incomeCard.setVisible(!income.isEmpty());
+        incomeCard.setManaged(!income.isEmpty());
+        incomeRows.getChildren().setAll(income.stream().map(RecurringController::billRow).toList());
+        incomeTotal.setText(income.isEmpty() ? "" : "+" + total(income, Transaction.Type.INCOME, today));
 
         ruleRows.getChildren().setAll(rules.isEmpty()
                 ? List.of(note("Nothing recurring yet. Add rent, a salary or a subscription once, and it is "
@@ -108,7 +120,7 @@ public final class RecurringController implements Page {
         return row;
     }
 
-    /** A bill to come: its day, what it is and how much. */
+    /** An occurrence to come, a bill or income: its day, what it is and how much. */
     static Node billRow(LedgerService.Due due) {
         Label day = new Label(Ui.date(due.day()));
         day.getStyleClass().add("row-subtitle");
@@ -130,7 +142,8 @@ public final class RecurringController implements Page {
         LocalDate next = rule.nextDue();
         String when = rule.frequency().every(rule.every()) + " · "
                 + (rule.paused() ? "paused" : next == null ? "ended" : "next " + Ui.date(next)) + " · "
-                + rule.account().name() + (rule.bill() ? " · bill" : "") + (rule.askFirst() ? " · asks first" : "");
+                + rule.account().name() + (rule.bill() ? " · bill" : "")
+                + (rule.regularIncome() ? " · regular income" : "") + (rule.askFirst() ? " · asks first" : "");
         Label detail = new Label(when);
         detail.getStyleClass().add("row-subtitle");
         VBox text = new VBox(2, title, detail);
@@ -162,13 +175,16 @@ public final class RecurringController implements Page {
         return amount;
     }
 
-    /** The bills' total in the base currency, at today's rates; ones with no rate are said, not guessed. */
-    private String total(List<LedgerService.Due> bills, LocalDate today) {
+    /**
+     * The total of the occurrences of one type, in the base currency at
+     * today's rates; ones with no rate are said, not guessed.
+     */
+    private String total(List<LedgerService.Due> dues, Transaction.Type type, LocalDate today) {
         long sum = 0;
         int uncounted = 0;
-        for (LedgerService.Due due : bills) {
+        for (LedgerService.Due due : dues) {
             Recurring rule = due.rule();
-            if (rule.type() != Transaction.Type.EXPENSE) {
+            if (rule.type() != type) {
                 continue;
             }
             try {
@@ -245,7 +261,7 @@ public final class RecurringController implements Page {
             service.save(new Recurring(rule.id(), rule.type(), rule.account(), rule.amountCents(), rule.toAccount(),
                     rule.toAmountCents(), rule.category(), rule.merchant(), rule.description(), rule.note(),
                     rule.frequency(), rule.every(), rule.startsOn(), rule.endsOn(), rule.done(), rule.bill(),
-                    rule.askFirst(), !rule.paused()));
+                    rule.askFirst(), !rule.paused(), rule.regularIncome()));
         } catch (IllegalArgumentException | SQLException e) {
             Ui.error(window(), "It could not be changed", e.getMessage());
             return;

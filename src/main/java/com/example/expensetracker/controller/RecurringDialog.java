@@ -137,17 +137,24 @@ public final class RecurringDialog {
             picker.setMaxWidth(Double.MAX_VALUE);
         }
 
-        CheckBox bill = new CheckBox("A bill: list it among upcoming bills");
+        Ui.Option billOption = Ui.option("A bill",
+                "Listed among the bills due in the next 30 days, with their total.");
+        CheckBox bill = billOption.box();
         bill.setSelected(existing != null ? existing.bill() : startType == Transaction.Type.EXPENSE);
-        CheckBox askFirst = new CheckBox("Ask me before recording each one");
+        Ui.Option incomeOption = Ui.option("Regular income, such as a salary",
+                "Listed among the income expected in the next 30 days, apart from the bills.");
+        CheckBox regularIncome = incomeOption.box();
+        regularIncome.setSelected(existing != null ? existing.regularIncome() : startType == Transaction.Type.INCOME);
+        Ui.Option askOption = Ui.option("Ask me before recording each one",
+                "For an amount that changes: each one waits for you under Recurring, to record or skip.");
+        CheckBox askFirst = askOption.box();
         askFirst.setSelected(existing != null && existing.askFirst());
-        Label askHint = new Label("For a bill whose amount changes: each one waits for you under Recurring.");
-        askHint.getStyleClass().add("field-hint");
-        askHint.setWrapText(true);
 
         Label pastHint = new Label();
         pastHint.getStyleClass().add("field-hint");
         pastHint.setWrapText(true);
+        pastHint.managedProperty().bind(pastHint.textProperty().isNotEmpty());
+        pastHint.visibleProperty().bind(pastHint.textProperty().isNotEmpty());
 
         Label error = new Label();
         error.getStyleClass().add("form-error");
@@ -181,6 +188,11 @@ public final class RecurringDialog {
             }
             merchantField.setVisible(!transfer);
             merchantField.setManaged(!transfer);
+            boolean income = chosen == Transaction.Type.INCOME;
+            billOption.row().setVisible(!income);
+            billOption.row().setManaged(!income);
+            incomeOption.row().setVisible(income);
+            incomeOption.row().setManaged(income);
             Account source = account.getValue();
             Account target = toAccount.getValue();
             boolean across = transfer && source != null && target != null
@@ -244,7 +256,7 @@ public final class RecurringDialog {
                 TransactionDialog.field("Repeats", repeatRow),
                 pair(TransactionDialog.field("First on", starts), TransactionDialog.field("Last on", ends)),
                 pastHint,
-                new VBox(6, bill, askFirst, askHint),
+                new VBox(8, billOption.row(), incomeOption.row(), askOption.row()),
                 error);
         form.getStyleClass().add("form");
         form.setPrefWidth(500);
@@ -279,7 +291,7 @@ public final class RecurringDialog {
                         transfer ? "" : merchant.getText(), description.getText(),
                         existing == null ? "" : existing.note(), frequency.getValue(), count, starts.getValue(),
                         ends.getValue(), existing == null ? 0 : existing.done(), bill.isSelected(),
-                        askFirst.isSelected(), existing != null && existing.paused()));
+                        askFirst.isSelected(), existing != null && existing.paused(), regularIncome.isSelected()));
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);

@@ -32,15 +32,26 @@ import java.util.Locale;
  * @param askFirst      whether each occurrence waits for the user rather than
  *                      being recorded when it falls due
  * @param paused        whether it is on hold: nothing falls due until resumed
+ * @param regularIncome whether it is regular income, such as a salary, listed
+ *                      among upcoming income
  */
 public record Recurring(long id, Transaction.Type type, Account account, long amountCents, Account toAccount,
         long toAmountCents, Category category, String merchant, String description, String note,
         Frequency frequency, int every, LocalDate startsOn, LocalDate endsOn, int done, boolean bill,
-        boolean askFirst, boolean paused) {
+        boolean askFirst, boolean paused, boolean regularIncome) {
 
     public Recurring {
         merchant = merchant == null ? "" : merchant;
         note = note == null ? "" : note;
+    }
+
+    /** A rule that is not listed among upcoming income. */
+    public Recurring(long id, Transaction.Type type, Account account, long amountCents, Account toAccount,
+            long toAmountCents, Category category, String merchant, String description, String note,
+            Frequency frequency, int every, LocalDate startsOn, LocalDate endsOn, int done, boolean bill,
+            boolean askFirst, boolean paused) {
+        this(id, type, account, amountCents, toAccount, toAmountCents, category, merchant, description, note,
+                frequency, every, startsOn, endsOn, done, bill, askFirst, paused, false);
     }
 
     /** The unit a rule repeats in. */
@@ -101,12 +112,12 @@ public record Recurring(long id, Transaction.Type type, Account account, long am
     /** The same rule, having dealt with {@code count} occurrences. */
     public Recurring withDone(int count) {
         return new Recurring(id, type, account, amountCents, toAccount, toAmountCents, category, merchant,
-                description, note, frequency, every, startsOn, endsOn, count, bill, askFirst, paused);
+                description, note, frequency, every, startsOn, endsOn, count, bill, askFirst, paused, regularIncome);
     }
 
     /** The same rule, with a database identity. */
     public Recurring withId(long newId) {
         return new Recurring(newId, type, account, amountCents, toAccount, toAmountCents, category, merchant,
-                description, note, frequency, every, startsOn, endsOn, done, bill, askFirst, paused);
+                description, note, frequency, every, startsOn, endsOn, done, bill, askFirst, paused, regularIncome);
     }
 }

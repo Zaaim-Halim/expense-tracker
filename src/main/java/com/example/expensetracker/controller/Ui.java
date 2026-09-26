@@ -9,13 +9,20 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import javafx.css.PseudoClass;
+import javafx.event.Event;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.stage.Window;
@@ -24,6 +31,38 @@ import javafx.stage.Window;
 public final class Ui {
 
     private Ui() {
+    }
+
+    /** A check box shown as a row: its title, what it does, and the row marked while it is on. */
+    record Option(HBox row, CheckBox box) {
+    }
+
+    private static final PseudoClass CHECKED = PseudoClass.getPseudoClass("checked");
+
+    /** An option whose whole row can be clicked. */
+    static Option option(String title, String detail) {
+        CheckBox box = new CheckBox();
+        box.setAccessibleText(title);
+        Label heading = new Label(title);
+        heading.getStyleClass().add("option-title");
+        Label explained = new Label(detail);
+        explained.getStyleClass().add("option-detail");
+        explained.setWrapText(true);
+        VBox text = new VBox(2, heading, explained);
+        HBox.setHgrow(text, Priority.ALWAYS);
+        HBox row = new HBox(12, box, text);
+        row.setAlignment(Pos.TOP_LEFT);
+        row.getStyleClass().add("option");
+        row.setOnMouseClicked(event -> {
+            if (!box.isDisabled()) {
+                box.setSelected(!box.isSelected());
+                box.requestFocus();
+            }
+        });
+        // The box's own click toggles it; the row must not toggle it back.
+        box.addEventFilter(MouseEvent.MOUSE_CLICKED, Event::consume);
+        box.selectedProperty().addListener((observable, before, now) -> row.pseudoClassStateChanged(CHECKED, now));
+        return new Option(row, box);
     }
 
     static String date(LocalDate date) {

@@ -6,12 +6,17 @@ import com.example.expensetracker.model.Recurring;
 import com.example.expensetracker.model.Category;
 import com.example.expensetracker.model.CategoryTotal;
 import com.example.expensetracker.model.CurrencyUnit;
+import com.example.expensetracker.model.Debt;
+import com.example.expensetracker.model.Goal;
 import com.example.expensetracker.model.ExchangeRate;
 import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.AccountRepository;
 import com.example.expensetracker.repository.CategoryRepository;
 import com.example.expensetracker.repository.BudgetRepository;
 import com.example.expensetracker.repository.CurrencyRepository;
+import com.example.expensetracker.repository.DebtRepository;
+import com.example.expensetracker.repository.GoalRepository;
+import com.example.expensetracker.repository.ReportRepository;
 import com.example.expensetracker.repository.RecurringRepository;
 import com.example.expensetracker.repository.Database;
 import com.example.expensetracker.repository.TransactionRepository;
@@ -61,6 +66,9 @@ public final class LedgerService {
     private final CurrencyRepository currencies;
     private final BudgetRepository budgets;
     private final RecurringRepository recurring;
+    private final GoalRepository goals;
+    private final DebtRepository debts;
+    private final ReportRepository reports;
 
     public LedgerService(Database database) {
         this.transactions = new TransactionRepository(database);
@@ -69,6 +77,9 @@ public final class LedgerService {
         this.currencies = new CurrencyRepository(database);
         this.budgets = new BudgetRepository(database);
         this.recurring = new RecurringRepository(database);
+        this.goals = new GoalRepository(database);
+        this.debts = new DebtRepository(database);
+        this.reports = new ReportRepository(database);
     }
 
     // --- transactions ---------------------------------------------------------
@@ -334,6 +345,18 @@ public final class LedgerService {
                 throw new IllegalArgumentException("\"" + stored.name() + "\" has transactions, so it stays in "
                         + stored.currency());
             }
+            // A goal's target is in its account's currency, and counts what
+            // the account holds, never what it owes.
+            if (stored != null && goalsFollowing(account.id()) > 0) {
+                if (!stored.currency().equals(code)) {
+                    throw new IllegalArgumentException("A savings goal follows \"" + stored.name()
+                            + "\", so it stays in " + stored.currency());
+                }
+                if (account.kind().liability()) {
+                    throw new IllegalArgumentException("A savings goal follows \"" + stored.name()
+                            + "\", so it cannot be a card or a loan");
+                }
+            }
         }
         var existing = accounts.findByName(name);
         if (existing.isPresent() && existing.get().id() != account.id()) {
@@ -344,6 +367,10 @@ public final class LedgerService {
             return accounts.insert(valid);
         }
         accounts.update(valid);
+        if (!valid.kind().liability()) {
+            // Only cards and loans have a limit, an interest rate and a payment.
+            debts.delete(valid.id());
+        }
         return valid;
     }
 
@@ -363,6 +390,12 @@ public final class LedgerService {
             throw new IllegalArgumentException("\"" + account.name() + "\" is used by " + rules
                     + (rules == 1 ? " recurring transaction" : " recurring transactions") + ". Change or delete "
                     + (rules == 1 ? "it" : "them") + " first.");
+        }
+        int following = goalsFollowing(account.id());
+        if (following > 0) {
+            throw new IllegalArgumentException("\"" + account.name() + "\" is followed by " + following
+                    + (following == 1 ? " savings goal" : " savings goals") + ". Change or delete "
+                    + (following == 1 ? "it" : "them") + " first.");
         }
         if (accounts.findAll().size() <= 1) {
             throw new IllegalArgumentException("Keep at least one account");
@@ -569,6 +602,11 @@ public final class LedgerService {
             throw new IllegalArgumentException(currency.code() + " is the currency of " + used
                     + (used == 1 ? " account" : " accounts"));
         }
+        long goalsIn = goals.findAll().stream().filter(goal -> goal.currency().equals(currency.code())).count();
+        if (goalsIn > 0) {
+            throw new IllegalArgumentException(goalsIn + (goalsIn == 1 ? " savings goal is" : " savings goals are")
+                    + " in " + currency.code());
+        }
         int priced = transactions.originalsIn(currency.code());
         if (priced > 0) {
             throw new IllegalArgumentException(priced + (priced == 1 ? " transaction has its price" : " transactions have "
@@ -724,7 +762,39 @@ public final class LedgerService {
     }
 
     public NetWorth netWorth(LocalDate day) throws SQLException {
-        Map<Long, Long> balances = accounts.balances();
+        return netWorth(accounts.balances(), day);
+    }
+
+    /** What was had and owed at the end of {@code day}, counting only what was recorded by then. */
+    public NetWorth netWorthOn(LocalDate day) throws SQLException {
+        return netWorth(accounts.balancesOn(day), day);
+    }
+
+    /**
+     * One month's net worth, at its last day, or today for the month in
+     * progress.
+     *
+     * @param month    which month
+     * @param netWorth what was had and owed then
+     */
+    public record NetWorthPoint(YearMonth month, NetWorth netWorth) {
+    }
+
+    /**
+     * Net worth at the end of each month from {@code from} to {@code to}, at
+     * each day's rates. Worked out from the transactions every time, never
+     * stored, so a transaction corrected later corrects the past too.
+     */
+    public List<NetWorthPoint> netWorthHistory(YearMonth from, YearMonth to, LocalDate today) throws SQLException {
+        List<NetWorthPoint> points = new ArrayList<>();
+        for (YearMonth month = from; !month.isAfter(to); month = month.plusMonths(1)) {
+            LocalDate end = month.atEndOfMonth().isAfter(today) ? today : month.atEndOfMonth();
+            points.add(new NetWorthPoint(month, netWorthOn(end)));
+        }
+        return points;
+    }
+
+    private NetWorth netWorth(Map<Long, Long> balances, LocalDate day) throws SQLException {
         CurrencyUnit base = baseCurrency();
         long have = 0;
         long owe = 0;
@@ -895,7 +965,8 @@ public final class LedgerService {
         Recurring valid = new Recurring(rule.id(), checked.type(), checked.account(), checked.amountCents(),
                 checked.toAccount(), checked.toAmountCents(), checked.category(), checked.merchant(),
                 checked.description(), checked.note(), rule.frequency(), rule.every(), rule.startsOn(), rule.endsOn(),
-                rule.done(), rule.bill(), rule.askFirst(), rule.paused());
+                rule.done(), rule.bill() && checked.type() != Transaction.Type.INCOME, rule.askFirst(), rule.paused(),
+                rule.regularIncome() && checked.type() == Transaction.Type.INCOME);
         if (valid.id() == 0) {
             return recurring.insert(valid);
         }
@@ -1058,24 +1129,21 @@ public final class LedgerService {
      * each week.
      */
     public List<Due> upcomingBills(LocalDate today, int days) throws SQLException {
-        LocalDate until = today.plusDays(days - 1L);
-        List<Due> bills = new ArrayList<>();
-        for (Recurring rule : recurring.findAll()) {
-            if (!rule.bill() || rule.paused()) {
-                continue;
-            }
-            for (int n = rule.done(); n < rule.done() + 400; n++) {
-                LocalDate day = rule.occurrence(n);
-                if (day.isAfter(until) || (rule.endsOn() != null && day.isAfter(rule.endsOn()))) {
-                    break;
-                }
-                if (!day.isBefore(today)) {
-                    bills.add(new Due(rule, day, null));
-                }
-            }
-        }
-        bills.sort(Comparator.comparing(Due::day).thenComparing(due -> due.rule().description()));
-        return bills;
+        return upcoming(today, days, rule -> rule.bill() && rule.type() != Transaction.Type.INCOME);
+    }
+
+    /**
+     * Every occurrence of regular income, such as a salary, from {@code today}
+     * for {@code days} days, soonest first.
+     */
+    public List<Due> upcomingIncome(LocalDate today, int days) throws SQLException {
+        return upcoming(today, days, rule -> rule.regularIncome() && rule.type() == Transaction.Type.INCOME);
+    }
+
+    private List<Due> upcoming(LocalDate today, int days, java.util.function.Predicate<Recurring> listed)
+            throws SQLException {
+        return occurrencesBetween(today, today.plusDays(days - 1L)).stream().filter(due -> listed.test(due.rule()))
+                .toList();
     }
 
     /** How many transactions a rule has recorded. */
@@ -1098,6 +1166,66 @@ public final class LedgerService {
     }
 
     /**
+     * One currency's rate against another, worked out from their rates in the
+     * base.
+     *
+     * @param code    the currency one unit of which is priced
+     * @param rate    what one unit is worth in the other currency; null when
+     *                either has no rate on the day
+     * @param leg     {@code code}'s own rate in the base; null when it is the
+     *                base
+     * @param via     the other currency's rate in the base, which the result
+     *                was worked out through; null when it is the base
+     */
+    public record CrossRate(String code, BigDecimal rate, ExchangeRate leg, ExchangeRate via) {
+    }
+
+    /**
+     * What one unit of each currency in use, and of the base, is worth in
+     * {@code against} on {@code day}.
+     *
+     * <p>Rates are kept in the base only, so one against another is the two
+     * divided: 1 X = (X in base) / (Y in base) Y, rounded once, at the end.
+     *
+     * @throws IllegalArgumentException when {@code against} has no rate that day
+     */
+    public List<CrossRate> ratesAgainst(String against, LocalDate day) throws SQLException {
+        String base = baseCurrency().code();
+        ExchangeRate via = null;
+        if (!against.equals(base)) {
+            via = currencies.rateOn(against, day).orElseThrow(
+                    () -> new IllegalArgumentException(against + " has no rate on " + day));
+        }
+        TreeSet<String> codes = new TreeSet<>(currenciesInUse());
+        codes.add(base);
+        codes.remove(against);
+        List<CrossRate> found = new ArrayList<>();
+        for (String code : codes) {
+            ExchangeRate leg = code.equals(base) ? null : currencies.rateOn(code, day).orElse(null);
+            BigDecimal inBase = code.equals(base) ? BigDecimal.ONE : leg == null ? null : leg.rate();
+            BigDecimal rate = null;
+            if (inBase != null) {
+                BigDecimal divisor = via == null ? BigDecimal.ONE : via.rate();
+                rate = inBase.divide(divisor, Money.RATE_SCALE, RoundingMode.HALF_EVEN).stripTrailingZeros();
+            }
+            found.add(new CrossRate(code, rate, leg, via));
+        }
+        return found;
+    }
+
+    /** The currencies rates can be shown against on {@code day}: the base, and each with a rate then. */
+    public List<String> currenciesWithRates(LocalDate day) throws SQLException {
+        List<String> found = new ArrayList<>();
+        found.add(baseCurrency().code());
+        for (String code : currenciesInUse()) {
+            if (currencies.rateOn(code, day).isPresent()) {
+                found.add(code);
+            }
+        }
+        return found;
+    }
+
+    /**
      * A rate to suggest for {@code code} on {@code day}, when the user has
      * none to hand: the latest known on or before it, else the nearest after
      * it. Only a suggestion; nothing is saved.
@@ -1109,5 +1237,383 @@ public final class LedgerService {
         }
         return currencies.rates().stream().filter(rate -> rate.currency().equals(code))
                 .min(Comparator.comparing(ExchangeRate::effectiveOn));
+    }
+
+    // --- savings goals ---------------------------------------------------------
+
+    public static final int MAX_GOAL_NAME = 40;
+
+    public List<Goal> allGoals() throws SQLException {
+        return goals.findAll();
+    }
+
+    private int goalsFollowing(long accountId) throws SQLException {
+        return (int) goals.findAll().stream().filter(goal -> goal.account() != null && goal.account().id() == accountId)
+                .count();
+    }
+
+    /**
+     * Saves a new goal, or changes one (a non-zero id). A goal that follows an
+     * account takes its currency and counts its balance, so it keeps no count
+     * of its own; one that stops following an account starts its own count
+     * from what the account held.
+     */
+    public Goal save(Goal goal) throws SQLException {
+        String name = goal.name() == null ? "" : goal.name().strip();
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("Say what it is for");
+        }
+        if (name.length() > MAX_GOAL_NAME) {
+            throw new IllegalArgumentException("Keep the name under " + MAX_GOAL_NAME + " characters");
+        }
+        if (goal.color() == null || !COLOR.matcher(goal.color()).matches()) {
+            throw new IllegalArgumentException("Choose a colour");
+        }
+        Account account = goal.account();
+        if (account != null) {
+            account = accounts.findAll().stream().filter(a -> a.id() == goal.account().id()).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("That account no longer exists"));
+            if (account.kind().liability()) {
+                throw new IllegalArgumentException("Money is saved in an account that holds it, not in a card or a loan");
+            }
+        }
+        String code = account != null ? account.currency()
+                : goal.currency() == null || goal.currency().isBlank() ? baseCurrency().code() : goal.currency();
+        CurrencyUnit currency = currency(code);
+        if (goal.targetCents() <= 0) {
+            throw new IllegalArgumentException("The target must be more than zero");
+        }
+        if (goal.targetCents() > largest(currency) || goal.savedCents() > largest(currency)) {
+            throw new IllegalArgumentException("That amount is too large");
+        }
+        if (goal.savedCents() < 0) {
+            throw new IllegalArgumentException("What is saved cannot be less than zero");
+        }
+        LocalDate created = goal.createdOn() == null ? LocalDate.now() : goal.createdOn();
+        long saved = account != null ? 0 : goal.savedCents();
+        if (goal.id() != 0 && account == null) {
+            Goal stored = goals.findAll().stream().filter(g -> g.id() == goal.id()).findFirst().orElse(null);
+            if (stored != null) {
+                created = stored.createdOn();
+                if (stored.account() != null) {
+                    saved = Math.max(0, accounts.balances().getOrDefault(stored.account().id(), 0L));
+                }
+            }
+        } else if (goal.id() != 0) {
+            created = goals.findAll().stream().filter(g -> g.id() == goal.id()).findFirst()
+                    .map(Goal::createdOn).orElse(created);
+        }
+        Goal valid = new Goal(goal.id(), name, goal.targetCents(), code, account, saved, goal.targetDate(),
+                goal.color(), created);
+        if (valid.id() == 0) {
+            return goals.insert(valid);
+        }
+        goals.update(valid);
+        return valid;
+    }
+
+    /**
+     * Adds to a goal's own count, or takes from it when {@code cents} is
+     * negative. A goal that follows an account counts the account instead:
+     * money goes into it by a transfer.
+     */
+    public void addToGoal(Goal goal, long cents) throws SQLException {
+        if (goal.account() != null) {
+            throw new IllegalArgumentException("\"" + goal.name() + "\" follows \"" + goal.account().name()
+                    + "\": move money into that account instead");
+        }
+        if (cents == 0) {
+            throw new IllegalArgumentException("Enter an amount");
+        }
+        if (Math.abs(cents) > largest(currency(goal.currency()))) {
+            throw new IllegalArgumentException("That amount is too large");
+        }
+        if (!goals.addSaved(goal.id(), cents)) {
+            throw new IllegalArgumentException("That is more than is saved");
+        }
+    }
+
+    public void deleteGoal(Goal goal) throws SQLException {
+        goals.delete(goal.id());
+    }
+
+    /**
+     * How a goal stands on a day.
+     *
+     * @param goal          the goal
+     * @param savedCents    what is saved, in the goal's currency
+     * @param perMonthCents what would have to be saved each month, from this
+     *                      one, to reach it by its date; null with no date,
+     *                      once reached, or when the date has passed
+     * @param monthsLeft    months until its date, this one included; 0 with
+     *                      no date or once it has passed
+     * @param state         reached, on track, behind, past its date, or
+     *                      with no date to be measured against
+     */
+    public record GoalProgress(Goal goal, long savedCents, Long perMonthCents, int monthsLeft, State state) {
+
+        public enum State { REACHED, ON_TRACK, BEHIND, OVERDUE, NO_DATE }
+
+        public long leftCents() {
+            return Math.max(0, goal.targetCents() - savedCents);
+        }
+
+        /** Saved against the target, from 0; more than 1 when saved beyond it. */
+        public double fraction() {
+            return (double) savedCents / goal.targetCents();
+        }
+    }
+
+    public List<GoalProgress> goalProgress(LocalDate today) throws SQLException {
+        Map<Long, Long> balances = accounts.balances();
+        List<GoalProgress> found = new ArrayList<>();
+        for (Goal goal : goals.findAll()) {
+            long saved = goal.account() == null ? goal.savedCents()
+                    : Math.max(0, balances.getOrDefault(goal.account().id(), 0L));
+            found.add(progress(goal, saved, today));
+        }
+        return found;
+    }
+
+    static GoalProgress progress(Goal goal, long saved, LocalDate today) {
+        if (saved >= goal.targetCents()) {
+            return new GoalProgress(goal, saved, null, 0, GoalProgress.State.REACHED);
+        }
+        LocalDate by = goal.targetDate();
+        if (by == null) {
+            return new GoalProgress(goal, saved, null, 0, GoalProgress.State.NO_DATE);
+        }
+        if (by.isBefore(today)) {
+            return new GoalProgress(goal, saved, null, 0, GoalProgress.State.OVERDUE);
+        }
+        int months = (int) java.time.temporal.ChronoUnit.MONTHS.between(YearMonth.from(today), YearMonth.from(by)) + 1;
+        long left = goal.targetCents() - saved;
+        long perMonth = (left + months - 1) / months;
+        // On track when at least the share of the target that the time gone
+        // by since it was set calls for is saved.
+        long total = java.time.temporal.ChronoUnit.DAYS.between(goal.createdOn(), by);
+        long gone = java.time.temporal.ChronoUnit.DAYS.between(goal.createdOn(), today);
+        BigDecimal expected = total <= 0 ? BigDecimal.valueOf(goal.targetCents())
+                : BigDecimal.valueOf(goal.targetCents()).multiply(BigDecimal.valueOf(Math.max(0, gone)))
+                        .divide(BigDecimal.valueOf(total), 0, RoundingMode.CEILING);
+        GoalProgress.State state = BigDecimal.valueOf(saved).compareTo(expected) >= 0
+                ? GoalProgress.State.ON_TRACK : GoalProgress.State.BEHIND;
+        return new GoalProgress(goal, saved, perMonth, months, state);
+    }
+
+    // --- debts -------------------------------------------------------------------
+
+    /** The most interest a yearly rate may be, as a percentage. */
+    public static final BigDecimal MAX_APR = new BigDecimal("100");
+
+    /** Every card's and loan's details, by account id. */
+    public Map<Long, Debt> debts() throws SQLException {
+        return debts.findAll();
+    }
+
+    public Optional<Debt> debtOf(Account account) throws SQLException {
+        return debts.find(account.id());
+    }
+
+    /** Keeps what is known of a card or a loan; with nothing known, forgets it. */
+    public void saveDebt(Debt debt) throws SQLException {
+        Account account = accounts.findAll().stream().filter(a -> a.id() == debt.accountId()).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("That account no longer exists"));
+        checkDebt(debt, account);
+        debts.save(debt);
+    }
+
+    /** Refuses details that make no sense for {@code account}. */
+    public void checkDebt(Debt debt, Account account) throws SQLException {
+        if (!account.kind().liability()) {
+            throw new IllegalArgumentException("Only a credit card or a loan has a limit, interest and payments");
+        }
+        long most = largest(currency(account.currency()));
+        if (debt.limitCents() != null && (debt.limitCents() <= 0 || debt.limitCents() > most)) {
+            throw new IllegalArgumentException(account.kind() == Account.Kind.LOAN
+                    ? "What was borrowed must be more than zero" : "The limit must be more than zero");
+        }
+        if (debt.apr() != null && (debt.apr().signum() < 0 || debt.apr().compareTo(MAX_APR) > 0)) {
+            throw new IllegalArgumentException("The interest rate is a percentage from 0 to 100");
+        }
+        if (debt.apr() != null && debt.apr().stripTrailingZeros().scale() > 4) {
+            throw new IllegalArgumentException("Use at most 4 decimals in the interest rate");
+        }
+        if (debt.minimumCents() != null && (debt.minimumCents() <= 0 || debt.minimumCents() > most)) {
+            throw new IllegalArgumentException("The monthly payment must be more than zero");
+        }
+        if (debt.dueDay() != null && (debt.dueDay() < 1 || debt.dueDay() > 31)) {
+            throw new IllegalArgumentException("The payment day is a day of the month, 1 to 31");
+        }
+    }
+
+    /**
+     * Where a debt stands, and where it is heading if the monthly payment is
+     * kept up and nothing more is borrowed.
+     *
+     * @param owedCents             what is owed now, in the account's
+     *                              currency; zero when nothing is
+     * @param limitCents            the card's limit or what the loan
+     *                              borrowed; null if not known
+     * @param interestPerMonthCents this month's interest on what is owed; null
+     *                              without a rate
+     * @param monthsToPayOff        how many payments it takes; null when not
+     *                              known, or never, with {@code never} set
+     * @param never                 whether the payment does not even cover the
+     *                              interest, so the debt never goes down
+     * @param totalInterestCents    the interest paid on the way; null when
+     *                              not known
+     */
+    public record DebtOutlook(long owedCents, Long limitCents, Long interestPerMonthCents, Integer monthsToPayOff,
+            boolean never, Long totalInterestCents) {
+
+        /** Owed against the limit, or against what was borrowed; null without one. */
+        public Double usedFraction() {
+            return limitCents == null ? null : (double) owedCents / limitCents;
+        }
+    }
+
+    /** The longest a payoff is worked out for: fifty years of monthly payments. */
+    static final int PAYOFF_MONTHS = 600;
+
+    /**
+     * How a debt of {@code balance} (negative when owed) stands with
+     * {@code debt}'s details. Each month's interest is the yearly rate over
+     * twelve, rounded to the minor unit, then the payment comes off.
+     */
+    public static DebtOutlook outlook(long balance, Debt debt) {
+        long owed = Math.max(0, -balance);
+        Long limit = debt == null ? null : debt.limitCents();
+        if (debt == null || debt.apr() == null) {
+            Integer months = null;
+            if (debt != null && debt.minimumCents() != null) {
+                months = (int) ((owed + debt.minimumCents() - 1) / debt.minimumCents());
+            }
+            return new DebtOutlook(owed, limit, null, months, false, null);
+        }
+        BigDecimal monthly = debt.apr().divide(BigDecimal.valueOf(1200), 12, RoundingMode.HALF_EVEN);
+        long interestNow = BigDecimal.valueOf(owed).multiply(monthly).setScale(0, RoundingMode.HALF_EVEN).longValueExact();
+        if (debt.minimumCents() == null) {
+            return new DebtOutlook(owed, limit, interestNow, null, false, null);
+        }
+        long left = owed;
+        long interest = 0;
+        int months = 0;
+        while (left > 0) {
+            if (months == PAYOFF_MONTHS) {
+                return new DebtOutlook(owed, limit, interestNow, null, true, null);
+            }
+            long charged = BigDecimal.valueOf(left).multiply(monthly).setScale(0, RoundingMode.HALF_EVEN).longValueExact();
+            if (charged >= debt.minimumCents()) {
+                return new DebtOutlook(owed, limit, interestNow, null, true, null);
+            }
+            interest += charged;
+            left = left + charged - debt.minimumCents();
+            months++;
+        }
+        return new DebtOutlook(owed, limit, interestNow, months, false, interest);
+    }
+
+    // --- reports and the calendar -----------------------------------------------------
+
+    /** Income and spending for each month between two days that has any. */
+    public Map<YearMonth, ReportRepository.Totals> totalsByMonth(LocalDate from, LocalDate to) throws SQLException {
+        return reports.byMonth(from, to);
+    }
+
+    /** Income and spending for each day between two days that has any. */
+    public Map<LocalDate, ReportRepository.Totals> totalsByDay(LocalDate from, LocalDate to) throws SQLException {
+        return reports.byDay(from, to);
+    }
+
+    public List<ReportRepository.Merchant> topMerchants(LocalDate from, LocalDate to, int limit) throws SQLException {
+        return reports.topMerchants(from, to, limit);
+    }
+
+    /** Totals per category of one type between two days, largest first, in the base currency. */
+    public List<CategoryTotal> totalsByCategory(Transaction.Type type, LocalDate from, LocalDate to)
+            throws SQLException {
+        return transactions.totalsByCategory(type, from, to);
+    }
+
+    /** The day of the first transaction, if any. */
+    public Optional<LocalDate> firstTransactionDay() throws SQLException {
+        return Optional.ofNullable(reports.firstDay());
+    }
+
+    /** Every occurrence of every active rule between two days inclusive, soonest first. */
+    public List<Due> occurrencesBetween(LocalDate from, LocalDate to) throws SQLException {
+        List<Due> found = new ArrayList<>();
+        for (Recurring rule : recurring.findAll()) {
+            if (rule.paused()) {
+                continue;
+            }
+            for (int n = rule.done(); n < rule.done() + 400; n++) {
+                LocalDate day = rule.occurrence(n);
+                if (day.isAfter(to) || (rule.endsOn() != null && day.isAfter(rule.endsOn()))) {
+                    break;
+                }
+                if (!day.isBefore(from)) {
+                    found.add(new Due(rule, day, null));
+                }
+            }
+        }
+        found.sort(Comparator.comparing(Due::day).thenComparing(due -> due.rule().description()));
+        return found;
+    }
+
+    public List<ReportRepository.AccountTotals> totalsByAccount(LocalDate from, LocalDate to) throws SQLException {
+        return reports.byAccount(from, to);
+    }
+
+    public List<ReportRepository.Expense> largestExpenses(LocalDate from, LocalDate to, int limit)
+            throws SQLException {
+        return reports.largestExpenses(from, to, limit);
+    }
+
+    /** Income and spending between two days, in the base currency. */
+    public ReportRepository.Totals totalsBetween(LocalDate from, LocalDate to) throws SQLException {
+        return reports.between(from, to);
+    }
+
+    /**
+     * What is held in one currency: every account in it added up, in it and
+     * in the base.
+     *
+     * @param code        the currency
+     * @param heldMinor   what the accounts in it hold, less what they owe, in
+     *                    its own minor units
+     * @param inBaseCents the same in the base currency at {@code day}'s rate;
+     *                    null when there is no rate
+     */
+    public record Holding(String code, long heldMinor, Long inBaseCents) {
+    }
+
+    /** What is held in each currency on {@code day}, the largest share of net worth first; none of zero. */
+    public List<Holding> holdings(LocalDate day) throws SQLException {
+        Map<Long, Long> balances = accounts.balances();
+        java.util.Map<String, Long> held = new java.util.TreeMap<>();
+        for (Account account : accounts.findAll()) {
+            held.merge(account.currency(), balances.getOrDefault(account.id(), 0L), Long::sum);
+        }
+        CurrencyUnit base = baseCurrency();
+        List<Holding> found = new ArrayList<>();
+        for (var entry : held.entrySet()) {
+            if (entry.getValue() == 0) {
+                continue;
+            }
+            Long inBase;
+            if (entry.getKey().equals(base.code())) {
+                inBase = entry.getValue();
+            } else {
+                Optional<ExchangeRate> rate = currencies.rateOn(entry.getKey(), day);
+                inBase = rate.isEmpty() ? null : Money.convert(entry.getValue(), currency(entry.getKey()).digits(),
+                        rate.get().rate(), base.digits());
+            }
+            found.add(new Holding(entry.getKey(), entry.getValue(), inBase));
+        }
+        found.sort(Comparator.comparing((Holding h) -> h.inBaseCents() == null ? Long.MIN_VALUE : h.inBaseCents())
+                .reversed());
+        return found;
     }
 }

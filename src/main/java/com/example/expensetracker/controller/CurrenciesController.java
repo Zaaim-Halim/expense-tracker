@@ -61,7 +61,7 @@ public final class CurrenciesController implements Page {
         newRateButton.setGraphic(Icons.of(Icons.ADD));
         newRateButton.setOnAction(event -> editRate(null));
         currentRatesButton.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
-        currentRatesButton.setOnAction(event -> RatesInUseDialog.show(window(), service));
+        currentRatesButton.setOnAction(event -> RatesDialog.show(window(), service));
         newCurrencyButton.setGraphic(Icons.of(Icons.ADD));
         newCurrencyButton.setOnAction(event -> {
             if (CurrencyDialog.show(window(), service)) {

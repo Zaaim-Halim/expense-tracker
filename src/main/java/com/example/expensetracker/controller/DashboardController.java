@@ -41,6 +41,9 @@ public final class DashboardController implements Page {
     @FXML private VBox comingCard;
     @FXML private VBox comingRows;
     @FXML private Button recurringButton;
+    @FXML private VBox goalCard;
+    @FXML private VBox goalRows;
+    @FXML private Button goalsButton;
 
     private LedgerService service;
     private Runnable dataChanged;
@@ -62,9 +65,10 @@ public final class DashboardController implements Page {
     }
 
     /** Where "All budgets" and "Recurring" go. */
-    void onShowPlans(Runnable budgets, Runnable recurring) {
+    void onShowPlans(Runnable budgets, Runnable recurring, Runnable goals) {
         link(budgetsButton, budgets);
         link(recurringButton, recurring);
+        link(goalsButton, goals);
     }
 
     private static void link(Button button, Runnable action) {
@@ -112,6 +116,46 @@ public final class DashboardController implements Page {
         comingCard.setManaged(anyComing);
         planRow.setVisible(anyBudget || anyComing);
         planRow.setManaged(anyBudget || anyComing);
+        refreshGoals(today);
+    }
+
+    /** The goals still being saved for, soonest first; reached ones have nothing left to show. */
+    private void refreshGoals(java.time.LocalDate today) {
+        java.util.List<LedgerService.GoalProgress> goals;
+        try {
+            goals = service.goalProgress(today).stream()
+                    .filter(p -> p.state() != LedgerService.GoalProgress.State.REACHED).limit(4).toList();
+        } catch (java.sql.SQLException e) {
+            goals = java.util.List.of();
+        }
+        goalRows.getChildren().setAll(goals.stream().map(DashboardController::goalRow).toList());
+        goalCard.setVisible(!goals.isEmpty());
+        goalCard.setManaged(!goals.isEmpty());
+    }
+
+    private static javafx.scene.Node goalRow(LedgerService.GoalProgress progress) {
+        com.example.expensetracker.model.Goal goal = progress.goal();
+        Label name = new Label(goal.name());
+        name.getStyleClass().add("row-title");
+        HBox.setHgrow(name, javafx.scene.layout.Priority.ALWAYS);
+        name.setMaxWidth(Double.MAX_VALUE);
+        Label amounts = new Label(Ui.money(progress.savedCents(), goal.currency()) + " of "
+                + Ui.money(goal.targetCents(), goal.currency()) + " · " + Math.round(progress.fraction() * 100) + "%");
+        amounts.getStyleClass().add("row-subtitle");
+        HBox top = new HBox(12, name, amounts);
+        top.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        javafx.scene.layout.StackPane track = new javafx.scene.layout.StackPane();
+        track.getStyleClass().add("bar-track");
+        javafx.scene.layout.StackPane fill = new javafx.scene.layout.StackPane();
+        fill.getStyleClass().add("bar-fill");
+        fill.setStyle("-fx-background-color: " + goal.color() + ";");
+        fill.maxWidthProperty().bind(track.widthProperty().multiply(Math.min(1, progress.fraction())));
+        javafx.scene.layout.StackPane.setAlignment(fill, javafx.geometry.Pos.CENTER_LEFT);
+        track.getChildren().add(fill);
+        Label status = new Label(GoalsController.status(progress));
+        status.getStyleClass().addAll("goal-status", "goal-" + progress.state().name().toLowerCase(Locale.ROOT)
+                .replace('_', '-'));
+        return new VBox(6, top, track, status);
     }
 
     @Override
@@ -202,7 +246,7 @@ public final class DashboardController implements Page {
     }
 
     /** A recent transaction: its category's initial (or a transfer), what and when, and how much. */
-    private static HBox recentRow(Transaction t) {
+    static HBox recentRow(Transaction t) {
         Label badge;
         String kind;
         if (t.type() == Transaction.Type.TRANSFER) {

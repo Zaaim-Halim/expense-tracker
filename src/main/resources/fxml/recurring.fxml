@@ -28,6 +28,13 @@
       </HBox>
       <VBox fx:id="billRows" spacing="0"/>
     </VBox>
+    <VBox fx:id="incomeCard" styleClass="card" spacing="4">
+      <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label text="Income in the next 30 days" styleClass="card-title" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+        <Label fx:id="incomeTotal" styleClass="row-amount, amount-income"/>
+      </HBox>
+      <VBox fx:id="incomeRows" spacing="0"/>
+    </VBox>
     <VBox styleClass="card" spacing="4">
       <Label text="Every recurring transaction" styleClass="card-title"/>
       <VBox fx:id="ruleRows" spacing="0"/>

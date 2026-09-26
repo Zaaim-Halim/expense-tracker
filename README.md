@@ -21,11 +21,15 @@ application. Why it exists, what it proves so far and what comes next are in
 ## What it does
 
 - **Dashboard:** what was spent, received and saved this month, spending by
-  category, the latest transactions, how the budgets stand and what is coming
-  up.
+  category, the latest transactions, how the budgets stand, what is coming
+  up, and the savings goals still being saved for.
 - **Accounts:** cash, bank, savings, credit cards, loans and investments, each
   with its balance, worked out from its transactions and never stored; net
-  worth, what you have and what you owe. A card shows what is owed on it.
+  worth, what you have and what you owe, and how net worth has moved month by
+  month over the last year. A card or a loan can have its limit or what was
+  borrowed, its interest rate, its monthly payment and its due day: it then
+  shows how much of the limit is used or of the loan paid back, and when it
+  will be paid off and at what cost in interest.
 - **Transactions:** expenses, income and transfers between accounts, with a
   merchant; add, edit, duplicate and delete; sortable by any column;
   double-click or Enter to edit, Delete to remove.
@@ -46,9 +50,11 @@ application. Why it exists, what it proves so far and what comes next are in
   currencies you use, fetched when the application starts or on request:
   the European Central Bank's, and ExchangeRate-API's for the ones the bank
   does not publish, such as the Albanian lek. Each rate says where it came
-  from, and a rate you entered is never replaced by a fetched one. The rates
-  in use today can be seen at a glance, and entering a rate or a transaction
-  in another currency suggests one, which you can take or ignore.
+  from, and a rate you entered is never replaced by a fetched one. Today's
+  rates can be seen at a glance, from Settings, Currencies or a transaction,
+  in the base currency or any other, each with its source and its day; and
+  entering a rate or a transaction in another currency suggests one, which
+  you can take or ignore.
 - **Budgets:** a limit on all spending or on one category, per week, month,
   year or any dates you choose, in the base currency. Each shows what is
   left, how much a day that leaves, and where spending is heading at its
@@ -59,8 +65,25 @@ application. Why it exists, what it proves so far and what comes next are in
   optional last. Each is recorded when it falls due, including any missed
   while the application was closed, and never twice. A bill whose amount
   changes can wait for you to confirm or skip it; bills due in the next 30
-  days are listed with their total. Any transaction can be made recurring,
-  and a rule can be paused.
+  days are listed with their total, and regular income, such as a salary,
+  apart from them with its own. Any transaction can be made recurring, and a
+  rule can be paused.
+- **Savings goals:** a target, an optional date and a colour; kept in an
+  account, whose balance is what is saved, or counted on their own, added to
+  and taken from as you go. Each says whether it is on track and what to put
+  aside each month to reach it in time, and one kept in an account can set
+  up that monthly transfer in a click.
+- **Reports:** for this month, last month, three months, this year or twelve
+  months: what came in, went out and was kept, beside the same days of the
+  period before; where the money went, as a ring and a list by category;
+  income and spending month by month; the largest expenses; each account's
+  income and spending; net worth at the end of each month; who was paid the
+  most; the budgets as they stand; and how much is held in each currency. Saved as a PDF, on A4
+  pages broken between its parts, in the light theme whatever the one on
+  screen.
+- **Calendar:** a month at a glance, each day with what was spent and
+  received and what is coming from recurring transactions; a day clicked
+  lists its transactions.
 - **Categories:** for expenses or for income, a set of each to start with; add
   your own, rename, recolour. A category or an account still in use cannot be
   deleted, so no transaction is ever lost with it.
@@ -68,9 +91,9 @@ application. Why it exists, what it proves so far and what comes next are in
   how dates, amounts and the first day of the week are written. Saved as they
   change, in `settings.properties` beside the data, so updates keep them.
 - **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
-  elsewhere), listed in Settings: N for a new transaction, F to search, 1–7 for
-  the pages, comma for Settings; Enter edits and Delete removes the selected
-  row.
+  elsewhere), listed in Settings: N for a new transaction, F to search, 1 to
+  9 and 0 for the pages, comma for Settings; Enter edits and Delete removes
+  the selected row.
 - **Backups:** made automatically once a day (the latest 10 are kept) and
   whenever you ask, in a folder of your choosing; any of them restored in a
   click, with your current data kept as a backup first so a restore can be
@@ -244,11 +267,12 @@ src/main/java/com/example/expensetracker/
   AppPaths.java             where the data lives
   HealthReport.java         tells xPack the version started
   ExpenseTrackerApp.java    the window
-  model/                    Expense, Category, CategoryTotal
+  model/                    Transaction, Account, Category, Budget, Recurring, Goal, Debt…
   repository/               SQLite: schema, versioned migrations, queries
-  service/                  the rules, money, monthly summaries
+  service/                  the rules, money, summaries, goals, debts and reports
   settings/                 the settings file, formats, the system's theme
   data/                     the data file and its backups: back up, restore, recover
+  export/                   the PDF a report is saved as
   controller/               pages, dialogs, icons, the screen renderer
 src/main/resources/
   fxml/                     the window and its pages

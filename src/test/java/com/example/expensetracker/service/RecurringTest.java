@@ -103,6 +103,27 @@ class RecurringTest {
     }
 
     @Test
+    void regular_income_is_listed_apart_from_the_bills() throws SQLException {
+        rule("Rent", Recurring.Frequency.MONTH, 1, LocalDate.of(2026, 2, 1), false);
+        Category salary = service.categoryNamed("Salary");
+        // Marked as a bill too: an income is never listed among the bills.
+        Recurring pay = service.save(new Recurring(0, Transaction.Type.INCOME, main, 320_000, null, 0, salary, "Employer",
+                "Salary", "", Recurring.Frequency.MONTH, 1, LocalDate.of(2026, 1, 28), null, 0, true, false, false, true));
+        assertTrue(pay.regularIncome());
+        assertTrue(!pay.bill(), "an income is not a bill");
+        LocalDate today = LocalDate.of(2026, 1, 20);
+        assertEquals(List.of("Rent"), service.upcomingBills(today, 30).stream().map(d -> d.rule().description()).toList());
+        assertEquals(List.of(LocalDate.of(2026, 1, 28)),
+                service.upcomingIncome(today, 30).stream().map(LedgerService.Due::day).toList());
+
+        Recurring notIncome = service.save(new Recurring(0, Transaction.Type.EXPENSE, main, 1_000, null, 0,
+                service.categoryNamed("Housing"), "", "Cleaning", "", Recurring.Frequency.MONTH, 1,
+                LocalDate.of(2026, 1, 25), null, 0, false, false, false, true));
+        assertTrue(!notIncome.regularIncome(), "only income is regular income");
+        assertEquals(1, service.upcomingIncome(today, 30).size());
+    }
+
+    @Test
     void one_that_asks_first_waits_and_can_be_recorded_or_skipped() throws SQLException {
         Recurring bill = rule("Electricity", Recurring.Frequency.MONTH, 1, JAN_31, true);
         LedgerService.Catch waiting = service.recordDue(LocalDate.of(2026, 3, 1));

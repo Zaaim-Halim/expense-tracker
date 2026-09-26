@@ -88,6 +88,33 @@ public final class AccountRepository {
     }
 
     /**
+     * Every account's balance at the end of {@code day}, in its own currency's
+     * minor units, by id: {@link #balances()}, counting only transactions
+     * dated on or before it.
+     */
+    public Map<Long, Long> balancesOn(java.time.LocalDate day) throws SQLException {
+        Map<Long, Long> balances = new HashMap<>();
+        try (java.sql.PreparedStatement query = connection.prepareStatement("""
+                SELECT a.id,
+                       a.opening_cents
+                     + COALESCE((SELECT SUM(CASE t.type WHEN 'income' THEN t.amount_cents
+                                                         ELSE -t.amount_cents END)
+                                 FROM transactions t WHERE t.account_id = a.id AND t.occurred_on <= ?), 0)
+                     + COALESCE((SELECT SUM(t.to_amount_cents)
+                                 FROM transactions t WHERE t.to_account_id = a.id AND t.occurred_on <= ?), 0)
+                FROM accounts a""")) {
+            query.setString(1, day.toString());
+            query.setString(2, day.toString());
+            try (ResultSet rows = query.executeQuery()) {
+                while (rows.next()) {
+                    balances.put(rows.getLong(1), rows.getLong(2));
+                }
+            }
+        }
+        return balances;
+    }
+
+    /**
      * Every account's balance, in its own currency's minor units, by id: the opening balance, plus
      * income, minus expenses, minus transfers out, plus transfers in.
      */

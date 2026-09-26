@@ -96,6 +96,50 @@ public final class Render {
                 main.select(section);
                 write(scene, directory.resolve(section.name().toLowerCase() + ".png"));
             }
+            // The long pages whole: what scrolls, drawn at its full height.
+            for (MainController.Section section : new MainController.Section[] {MainController.Section.REPORTS,
+                MainController.Section.GOALS, MainController.Section.DASHBOARD, MainController.Section.CALENDAR}) {
+                main.select(section);
+                writeContent(scene, directory.resolve(section.name().toLowerCase() + "-full.png"));
+            }
+            // The wheel over the accounts list scrolls the page: the list has
+            // nothing of its own to scroll, and must not swallow it.
+            main.select(MainController.Section.ACCOUNTS);
+            scene.getRoot().applyCss();
+            scene.getRoot().layout();
+            javafx.scene.control.ScrollPane accountsPage = (javafx.scene.control.ScrollPane) scene.getRoot()
+                    .lookup(".page-scroll");
+            Node accountList = scene.getRoot().lookup(".category-list");
+            accountsPage.setVvalue(0);
+            accountList.fireEvent(new javafx.scene.input.ScrollEvent(javafx.scene.input.ScrollEvent.SCROLL, 10, 10, 10, 10,
+                    false, false, false, false, false, false, 0, -120, 0, -120,
+                    javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE, 0,
+                    javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.NONE, 0, 0, null));
+            if (accountsPage.getVvalue() <= 0) {
+                throw new IllegalStateException("the wheel over the accounts list did not scroll the page");
+            }
+            System.out.println("the wheel over the accounts list scrolled the page to " + accountsPage.getVvalue());
+            accountsPage.setVvalue(0);
+
+            // A year's report, saved as a PDF.
+            main.select(MainController.Section.REPORTS);
+            List<com.example.expensetracker.export.Pdf.Page> report = ((ReportsController) main.page(
+                    MainController.Section.REPORTS)).pages(ReportsController.Span.TWELVE_MONTHS, LocalDate.now());
+            com.example.expensetracker.export.Pdf.write(directory.resolve("report.pdf"), "Expense Tracker report", report);
+            System.out.println("rendered " + directory.resolve("report.pdf") + ", " + report.size() + " pages");
+
+            // The smallest window the application allows: the sidebar must still fit.
+            main.select(MainController.Section.ACCOUNTS);
+            javafx.scene.Parent root = scene.getRoot();
+            root.resize(960, 640);
+            root.applyCss();
+            root.layout();
+            SnapshotParameters small = new SnapshotParameters();
+            small.setTransform(Transform.scale(2, 2));
+            small.setViewport(new javafx.geometry.Rectangle2D(0, 0, 1920, 1280));
+            writePng(root.snapshot(small, null), directory.resolve("accounts-smallest.png"));
+            root.resize(scene.getWidth(), scene.getHeight());
+            root.layout();
 
             Scene emptyScene = ExpenseTrackerApp.createScene(emptyService);
             stage.setScene(emptyScene);
@@ -130,7 +174,12 @@ public final class Render {
             dialog(RateDialog.create(stage, service, service.rates().stream()
                     .filter(r -> r.currency().equals("USD")).findFirst().orElseThrow()),
                     directory.resolve("dialog-edit-rate.png"));
-            dialog(RatesInUseDialog.create(stage, service), directory.resolve("dialog-current-rates.png"));
+            dialog(RatesDialog.create(stage, service, null), directory.resolve("dialog-current-rates.png"));
+            dialog(RatesDialog.create(stage, service, "USD"), directory.resolve("dialog-rates-in-usd.png"));
+            dialog(GoalDialog.create(stage, service, null), directory.resolve("dialog-new-goal.png"));
+            dialog(GoalDialog.create(stage, service, service.allGoals().get(0)), directory.resolve("dialog-edit-goal.png"));
+            dialog(AccountDialog.create(stage, service, service.accountNamed("Car loan")),
+                    directory.resolve("dialog-edit-loan.png"));
             dialog(BudgetDialog.create(stage, service, null), directory.resolve("dialog-new-budget.png"));
             dialog(BudgetDialog.create(stage, service, service.allBudgets().get(1)),
                     directory.resolve("dialog-edit-budget.png"));
@@ -140,6 +189,9 @@ public final class Render {
                     directory.resolve("dialog-edit-recurring.png"));
             dialog(RecurringDialog.create(stage, service, null, all.get(0)),
                     directory.resolve("dialog-make-recurring.png"));
+            dialog(RecurringDialog.create(stage, service, service.allRecurring().stream()
+                    .filter(r -> r.regularIncome()).findFirst().orElseThrow(), null),
+                    directory.resolve("dialog-edit-salary.png"));
             dialog(TransactionDialog.create(stage, service, all.stream().filter(t -> t.original() != null)
                     .findFirst().orElseThrow()), directory.resolve("dialog-edit-priced.png"));
             dialog(CurrencyDialog.create(stage, service), directory.resolve("dialog-new-currency.png"));
@@ -162,10 +214,16 @@ public final class Render {
                     .filter(t -> t.account().currency().equals("USD")).findFirst().orElseThrow()),
                     directory.resolve("dialog-edit-foreign-dark.png"));
             dialog(RateDialog.create(stage, service, null), directory.resolve("dialog-new-rate-dark.png"));
-            dialog(RatesInUseDialog.create(stage, service), directory.resolve("dialog-current-rates-dark.png"));
+            dialog(RatesDialog.create(stage, service, null), directory.resolve("dialog-current-rates-dark.png"));
             dialog(BudgetDialog.create(stage, service, null), directory.resolve("dialog-new-budget-dark.png"));
+            dialog(GoalDialog.create(stage, service, service.allGoals().get(0)),
+                    directory.resolve("dialog-edit-goal-dark.png"));
+            dialog(RatesDialog.create(stage, service, "ALL"), directory.resolve("dialog-rates-in-all-dark.png"));
             dialog(RecurringDialog.create(stage, service, null, null),
                     directory.resolve("dialog-new-recurring-dark.png"));
+            com.example.expensetracker.export.Pdf.write(directory.resolve("report-from-dark.pdf"), "Report",
+                    ((ReportsController) main.page(MainController.Section.REPORTS))
+                            .pages(ReportsController.Span.THIS_MONTH, LocalDate.now()));
             Appearance.change(light.withAccent(Settings.Accent.ROSE));
             main.select(MainController.Section.DASHBOARD);
             write(scene, directory.resolve("dashboard-rose.png"));
@@ -506,7 +564,7 @@ public final class Render {
         service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.INCOME, bank, 320_000, null,
                 0, service.categoryNamed("Salary"), "Acme Ltd", "Salary", "",
                 com.example.expensetracker.model.Recurring.Frequency.MONTH, 1, monthStart.plusMonths(1), null, 0,
-                false, false, false));
+                false, false, false, true));
         service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.EXPENSE, bank, 7_500, null,
                 0, service.categoryNamed("Utilities"), "Power & Co", "Electricity", "",
                 com.example.expensetracker.model.Recurring.Frequency.MONTH, 1, today.minusDays(1), null, 0, true,
@@ -520,10 +578,72 @@ public final class Render {
                 com.example.expensetracker.model.Recurring.Frequency.WEEK, 2, today.plusDays(4), null, 0, true, false,
                 true));
         service.recordDue(today);
+
+        // A year behind it, so reports and net worth have a history to show:
+        // the same salary and rent each month, food and fun that vary, and a
+        // little put aside.
+        String[][] spending = {{"Food", "Groceries"}, {"Transport", "Fuel"}, {"Entertainment", "Concert"},
+            {"Shopping", "Clothes"}, {"Utilities", "Phone"}};
+        String[] merchants = {"Fresh Market", "City Garage", "Blue Note", "Northwind", "Tele One"};
+        for (int back = 1; back <= 11; back++) {
+            LocalDate month = first.minusMonths(back);
+            service.save(new Transaction(0, Transaction.Type.INCOME, bank, 320_000, null, 0,
+                    service.categoryNamed("Salary"), "Acme Ltd", "Salary", month, "", List.of()));
+            service.save(Transaction.expense(bank, 125_000, service.categoryNamed("Housing"), "Rent",
+                    month.plusDays(2), "", List.of()));
+            long onCard = 0;
+            for (int i = 0; i < spending.length; i++) {
+                long cents = 4_000L + ((back * 37L + i * 53L) % 11) * 2_150L;
+                onCard += i % 2 == 0 ? cents : 0;
+                Transaction expense = Transaction.expense(i % 2 == 0 ? card : bank, cents,
+                        service.categoryNamed(spending[i][0]), spending[i][1], month.plusDays(4L + i * 5L), "",
+                        List.of());
+                service.save(new Transaction(0, expense.type(), expense.account(), expense.amountCents(), null, 0,
+                        expense.category(), merchants[i], expense.description(), expense.date(), "", List.of()));
+            }
+            service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, onCard, card, onCard, null, "",
+                    "Card payment", month.plusDays(27), "", List.of()));
+            service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, 30_000 + back * 1_000L, savings,
+                    30_000 + back * 1_000L, null, "", "Put aside", month.plusDays(3), "", List.of()));
+        }
+
+        // Savings goals: one kept in the savings account, two of their own.
+        service.save(new com.example.expensetracker.model.Goal(0, "Holiday in Japan", 1_500_000, "", savings, 0,
+                today.plusMonths(8).withDayOfMonth(1), "#ec4899", today.minusMonths(4)));
+        com.example.expensetracker.model.Goal fund = service.save(new com.example.expensetracker.model.Goal(0,
+                "Emergency fund", 600_000, "", null, 180_000, null, "#14b8a6", today.minusMonths(6)));
+        service.addToGoal(fund, 25_000);
+        service.save(new com.example.expensetracker.model.Goal(0, "New laptop", 150_000, "", null, 40_000,
+                today.plusMonths(3), "#f97316", today.minusMonths(3)));
+        service.save(new com.example.expensetracker.model.Goal(0, "Bike", 80_000, "", null, 80_000, null, "#22c55e",
+                today.minusMonths(2)));
+
+        // What is known of the card, and a loan being paid back.
+        service.saveDebt(new com.example.expensetracker.model.Debt(card.id(), 300_000L,
+                new java.math.BigDecimal("19.9"), 5_000L, 15));
+        Account loan = service.save(new Account(0, "Car loan", Account.Kind.LOAN, "", -845_000));
+        service.saveDebt(new com.example.expensetracker.model.Debt(loan.id(), 1_500_000L,
+                new java.math.BigDecimal("5.4"), 28_500L, 1));
+
         // Paid in pounds with the euro card: the price kept beside the charge.
         service.save(new Transaction(0, Transaction.Type.EXPENSE, card, 2_988, null, 0,
                 service.categoryNamed("Entertainment"), "National Gallery", "Exhibition in London", today, "",
                 List.of("travel"), null, new Transaction.Original("GBP", 2_500)));
+    }
+
+    /** The page's scrolling content, whole, however much of it the window shows. */
+    private static void writeContent(Scene scene, Path file) throws IOException {
+        scene.getRoot().applyCss();
+        scene.getRoot().layout();
+        javafx.scene.control.ScrollPane scroll = (javafx.scene.control.ScrollPane) scene.getRoot()
+                .lookup(".page-scroll");
+        javafx.scene.Parent content = (javafx.scene.Parent) scroll.getContent();
+        SnapshotParameters parameters = new SnapshotParameters();
+        parameters.setTransform(Transform.scale(2, 2));
+        parameters.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        WritableImage image = content.snapshot(parameters, null);
+        writePng(image, file);
+        System.out.println("rendered " + file);
     }
 
     private static void write(Scene scene, Path file) throws IOException {
