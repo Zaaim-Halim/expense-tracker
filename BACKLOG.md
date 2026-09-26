@@ -39,6 +39,7 @@ What has been proven, by which check. `validate-install.sh` is
 | Health report, version recorded as good | ✅ | validate-install.sh |
 | The window starts on the bundled runtime | ✅ | checked by hand for 1.0.0; not yet scripted, since it needs a display |
 | Uninstall removes application and desktop entry | ✅ | validate-install.sh |
+| Windows: a graphical application with no console window, and a desktop shortcut | ✅ | 2.2.1 installed on the owner's Windows machine from an installer built with xPack 0.5.0: the application opened with no console behind it, and the installer put a shortcut on the desktop |
 | User data survives uninstall | ✅ | validate-install.sh |
 | Installer wizard (window) | ☐ | manual |
 | Full update | ☐ | not yet: every update so far had a delta. A copy more than three releases behind (deltas are built from the last three) would get the full package; no such copy has been updated yet |
@@ -61,7 +62,7 @@ What has been proven, by which check. `validate-install.sh` is
 | Interrupted download recovered | ☐ | step 3 |
 | Not enough disk space refused | ☐ | step 3 |
 | Runtime change through an update | ◐ | 2.2.1 → 2.3.0 on the owner's Mac, the runtime gaining `java.net.http` and `jdk.crypto.ec`: a 25 328 570-byte delta, 9 of 134 files new and 125 reused, staged by the running copy. Not yet confirmed applied and healthy |
-| Start-up work within the health timeout | ✅ | 2.4.0 records due recurring transactions only after reporting its start. One commit per occurrence took 13.7 s for 500 on the Windows runner (0.2 s on macOS): each commit waits for the disk. One commit per rule's catch-up: 34 ms on macOS |
+| Start-up work within the health timeout | ✅ | 2.4.0 records due recurring transactions only after reporting its start. One commit per occurrence took 13.7 s for 500 on the Windows runner (0.2 s on macOS): each commit waits for the disk. One commit per rule's catch-up: 350 ms on the Windows runner, 34 ms on macOS |
 | Cross-platform packages | ☐ | step 5 |
 
 ## Plan
