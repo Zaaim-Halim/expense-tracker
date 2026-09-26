@@ -34,7 +34,7 @@
     <!-- The xPack release this application is built with. Its binaries and
          its Maven plugin are installed by scripts/setup-xpack.sh, here and in
          CI alike. -->
-    <xpack.release>0.4.1</xpack.release>
+    <xpack.release>0.4.2</xpack.release>
     <!-- What the xPack plugin needs, so a plain `mvn package` builds and
          signs. Each can be overridden with -D, as CI and the validation do. -->
     <xpack.home>${user.home}/.xpack/sdk/${xpack.release}</xpack.home>
