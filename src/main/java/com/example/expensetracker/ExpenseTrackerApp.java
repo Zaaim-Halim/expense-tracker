@@ -4,6 +4,7 @@ import com.example.expensetracker.controller.Appearance;
 import com.example.expensetracker.controller.Data;
 import com.example.expensetracker.controller.MainController;
 import com.example.expensetracker.controller.RecoveryDialog;
+import com.example.expensetracker.controller.Recurrences;
 import com.example.expensetracker.controller.Ui;
 import com.example.expensetracker.data.DataStore;
 import com.example.expensetracker.controller.Render;
@@ -89,6 +90,10 @@ public final class ExpenseTrackerApp extends Application {
         stage.show();
         // The window is up: tell xPack this version works.
         Platform.runLater(HealthReport::started);
+        // After the start is reported, never before it: whatever falls due,
+        // recording it cannot make a healthy start look like a failed one.
+        MainController main = (MainController) scene.getUserData();
+        Platform.runLater(() -> Recurrences.start(store.service(), main::refreshShown));
         // The day's backup, after the start is reported so it can never delay
         // it, and on the data worker so it never runs beside a restore.
         if (settings.settings().automaticBackups()) {

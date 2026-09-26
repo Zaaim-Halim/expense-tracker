@@ -40,6 +40,7 @@ public final class TransactionsController implements Page {
     @FXML private VBox filterBar;
     @FXML private Button newButton;
     @FXML private Button duplicateButton;
+    @FXML private Button recurringButton;
     @FXML private Button editButton;
     @FXML private Button deleteButton;
     @FXML private TableView<Transaction> table;
@@ -75,9 +76,17 @@ public final class TransactionsController implements Page {
 
         newButton.setGraphic(Icons.of(Icons.ADD));
         duplicateButton.setGraphic(Icons.of(Icons.DUPLICATE));
+        recurringButton.setGraphic(Icons.of(Icons.REPEAT));
+        recurringButton.setTooltip(new Tooltip("Record it again every week, month or year"));
+        recurringButton.setOnAction(event -> {
+            if (RecurringDialog.show(window(), service, null, selected())) {
+                Recurrences.run(service, () -> { });
+                dataChanged.run();
+            }
+        });
         editButton.setGraphic(Icons.of(Icons.EDIT));
         deleteButton.setGraphic(Icons.of(Icons.DELETE));
-        for (Button button : List.of(duplicateButton, editButton, deleteButton)) {
+        for (Button button : List.of(recurringButton, duplicateButton, editButton, deleteButton)) {
             button.disableProperty().bind(table.getSelectionModel().selectedItemProperty().isNull());
         }
         duplicateButton.setTooltip(new Tooltip("A copy dated today"));

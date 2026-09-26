@@ -60,7 +60,8 @@ What has been proven, by which check. `validate-install.sh` is
 | Invalid update index refused | ☐ | step 3 |
 | Interrupted download recovered | ☐ | step 3 |
 | Not enough disk space refused | ☐ | step 3 |
-| Runtime change through an update | ☐ | a later version with another runtime |
+| Runtime change through an update | ◐ | 2.2.1 → 2.3.0 on the owner's Mac, the runtime gaining `java.net.http` and `jdk.crypto.ec`: a 25 328 570-byte delta, 9 of 134 files new and 125 reused, staged by the running copy. Not yet confirmed applied and healthy |
+| Start-up work within the health timeout | ✅ | 2.4.0 records due recurring transactions only after reporting its start; 500 due items record in 289 ms |
 | Cross-platform packages | ☐ | step 5 |
 
 ## Plan

@@ -21,7 +21,8 @@ application. Why it exists, what it proves so far and what comes next are in
 ## What it does
 
 - **Dashboard:** what was spent, received and saved this month, spending by
-  category and the latest transactions.
+  category, the latest transactions, how the budgets stand and what is coming
+  up.
 - **Accounts:** cash, bank, savings, credit cards, loans and investments, each
   with its balance, worked out from its transactions and never stored; net
   worth, what you have and what you owe. A card shows what is owed on it.
@@ -45,7 +46,21 @@ application. Why it exists, what it proves so far and what comes next are in
   currencies you use, fetched when the application starts or on request:
   the European Central Bank's, and ExchangeRate-API's for the ones the bank
   does not publish, such as the Albanian lek. Each rate says where it came
-  from, and a rate you entered is never replaced by a fetched one.
+  from, and a rate you entered is never replaced by a fetched one. The rates
+  in use today can be seen at a glance, and entering a rate or a transaction
+  in another currency suggests one, which you can take or ignore.
+- **Budgets:** a limit on all spending or on one category, per week, month,
+  year or any dates you choose, in the base currency. Each shows what is
+  left, how much a day that leaves, and where spending is heading at its
+  current pace; it turns amber when close and red when over. Only spending
+  counts: transfers and income do not.
+- **Recurring transactions:** rent, salary, subscriptions, transfers to
+  savings, every so many days, weeks, months or years, from a first day to an
+  optional last. Each is recorded when it falls due, including any missed
+  while the application was closed, and never twice. A bill whose amount
+  changes can wait for you to confirm or skip it; bills due in the next 30
+  days are listed with their total. Any transaction can be made recurring,
+  and a rule can be paused.
 - **Categories:** for expenses or for income, a set of each to start with; add
   your own, rename, recolour. A category or an account still in use cannot be
   deleted, so no transaction is ever lost with it.
@@ -53,7 +68,7 @@ application. Why it exists, what it proves so far and what comes next are in
   how dates, amounts and the first day of the week are written. Saved as they
   change, in `settings.properties` beside the data, so updates keep them.
 - **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
-  elsewhere), listed in Settings: N for a new transaction, F to search, 1–5 for
+  elsewhere), listed in Settings: N for a new transaction, F to search, 1–7 for
   the pages, comma for Settings; Enter edits and Delete removes the selected
   row.
 - **Backups:** made automatically once a day (the latest 10 are kept) and

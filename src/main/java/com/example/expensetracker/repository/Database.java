@@ -36,7 +36,7 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 6;
+    public static final int SCHEMA = 7;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
@@ -59,6 +59,11 @@ public final class Database implements AutoCloseable {
      * <p>Schema 6 only records where each exchange rate came from, in a
      * column with a default. Schema 5's code reads rates without it and writes
      * its own as the user's, which is what they are. So it may still open it.
+     *
+     * <p>Schema 7 adds budgets and recurring transactions, in tables of their
+     * own, and a link from a transaction to the rule that recorded it. Schema
+     * 5's code never reads them and adds transactions without the link, which
+     * is what a transaction entered by hand is. So it may still open it.
      */
     public static final int COMPATIBILITY = 5;
 
@@ -288,6 +293,9 @@ public final class Database implements AutoCloseable {
             }
             if (schema < 6) {
                 addRateSources();
+            }
+            if (schema < 7) {
+                addBudgetsAndRecurring();
             }
             connection.commit();
         } catch (SQLException e) {
@@ -541,6 +549,61 @@ public final class Database implements AutoCloseable {
         try (Statement statement = connection.createStatement()) {
             statement.execute("ALTER TABLE exchange_rates ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
             statement.execute("UPDATE meta SET value = '6' WHERE key = 'schema'");
+        }
+    }
+
+    /**
+     * Schema 7: budgets, recurring transactions, and which rule recorded a
+     * transaction. Additive: see {@link #COMPATIBILITY}.
+     *
+     * <p>A rule counts the occurrences it has dealt with ({@code done}, each
+     * recorded or skipped) rather than keeping a next date: every date is
+     * worked out from the start, so a month that begins on the 31st comes
+     * back to the 31st after a shorter one.
+     */
+    private void addBudgetsAndRecurring() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE budgets (
+                        id           INTEGER PRIMARY KEY,
+                        category_id  INTEGER REFERENCES categories(id),
+                        period       TEXT NOT NULL CHECK (period IN ('week', 'month', 'year', 'custom')),
+                        amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+                        starts_on    TEXT,
+                        ends_on      TEXT,
+                        CHECK (period <> 'custom' OR (starts_on IS NOT NULL AND ends_on IS NOT NULL
+                                                      AND starts_on <= ends_on))
+                    )""");
+            statement.execute("""
+                    CREATE TABLE recurring (
+                        id              INTEGER PRIMARY KEY,
+                        type            TEXT NOT NULL CHECK (type IN ('expense', 'income', 'transfer')),
+                        account_id      INTEGER NOT NULL REFERENCES accounts(id),
+                        amount_cents    INTEGER NOT NULL CHECK (amount_cents > 0),
+                        to_account_id   INTEGER REFERENCES accounts(id),
+                        to_amount_cents INTEGER,
+                        category_id     INTEGER REFERENCES categories(id),
+                        merchant        TEXT NOT NULL DEFAULT '',
+                        description     TEXT NOT NULL,
+                        note            TEXT NOT NULL DEFAULT '',
+                        frequency       TEXT NOT NULL CHECK (frequency IN ('day', 'week', 'month', 'year')),
+                        every           INTEGER NOT NULL DEFAULT 1 CHECK (every BETWEEN 1 AND 366),
+                        starts_on       TEXT NOT NULL,
+                        ends_on         TEXT,
+                        done            INTEGER NOT NULL DEFAULT 0 CHECK (done >= 0),
+                        bill            INTEGER NOT NULL DEFAULT 0,
+                        ask_first       INTEGER NOT NULL DEFAULT 0,
+                        paused          INTEGER NOT NULL DEFAULT 0
+                    )""");
+            // Deleting a rule keeps what it recorded: those are the user's
+            // transactions, only no longer tied to a rule.
+            statement.execute("ALTER TABLE transactions ADD COLUMN recurring_id INTEGER "
+                    + "REFERENCES recurring(id) ON DELETE SET NULL");
+            statement.execute("CREATE INDEX budgets_by_category ON budgets(category_id)");
+            statement.execute("CREATE INDEX recurring_by_account ON recurring(account_id)");
+            statement.execute("CREATE INDEX recurring_by_destination ON recurring(to_account_id)");
+            statement.execute("CREATE INDEX recurring_by_category ON recurring(category_id)");
+            statement.execute("UPDATE meta SET value = '7' WHERE key = 'schema'");
         }
     }
 

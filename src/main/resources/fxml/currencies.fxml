@@ -15,6 +15,7 @@
         <Label text="Currencies" styleClass="page-title"/>
         <Label fx:id="summaryLabel" styleClass="page-subtitle"/>
       </VBox>
+      <Button fx:id="currentRatesButton" text="Current rates" styleClass="secondary"/>
       <Button fx:id="newRateButton" text="New rate" styleClass="primary"/>
     </HBox>
 

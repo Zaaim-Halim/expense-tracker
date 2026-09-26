@@ -1,6 +1,8 @@
 package com.example.expensetracker.service;
 
 import com.example.expensetracker.model.Account;
+import com.example.expensetracker.model.Budget;
+import com.example.expensetracker.model.Recurring;
 import com.example.expensetracker.model.Category;
 import com.example.expensetracker.model.CategoryTotal;
 import com.example.expensetracker.model.CurrencyUnit;
@@ -8,7 +10,9 @@ import com.example.expensetracker.model.ExchangeRate;
 import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.AccountRepository;
 import com.example.expensetracker.repository.CategoryRepository;
+import com.example.expensetracker.repository.BudgetRepository;
 import com.example.expensetracker.repository.CurrencyRepository;
+import com.example.expensetracker.repository.RecurringRepository;
 import com.example.expensetracker.repository.Database;
 import com.example.expensetracker.repository.TransactionRepository;
 import java.math.BigDecimal;
@@ -55,12 +59,16 @@ public final class LedgerService {
     private final AccountRepository accounts;
     private final CategoryRepository categories;
     private final CurrencyRepository currencies;
+    private final BudgetRepository budgets;
+    private final RecurringRepository recurring;
 
     public LedgerService(Database database) {
         this.transactions = new TransactionRepository(database);
         this.accounts = new AccountRepository(database);
         this.categories = new CategoryRepository(database);
         this.currencies = new CurrencyRepository(database);
+        this.budgets = new BudgetRepository(database);
+        this.recurring = new RecurringRepository(database);
     }
 
     // --- transactions ---------------------------------------------------------
@@ -321,7 +329,8 @@ public final class LedgerService {
             // Its transactions were recorded in its currency; relabelling
             // them would change every amount's meaning.
             Account stored = accounts.findAll().stream().filter(a -> a.id() == account.id()).findFirst().orElse(null);
-            if (stored != null && !stored.currency().equals(code) && accounts.usage(account.id()) > 0) {
+            if (stored != null && !stored.currency().equals(code)
+                    && (accounts.usage(account.id()) > 0 || recurring.usingAccount(account.id()) > 0)) {
                 throw new IllegalArgumentException("\"" + stored.name() + "\" has transactions, so it stays in "
                         + stored.currency());
             }
@@ -348,6 +357,12 @@ public final class LedgerService {
         if (used > 0) {
             throw new IllegalArgumentException("\"" + account.name() + "\" has " + used
                     + (used == 1 ? " transaction" : " transactions") + ". Move or delete them first.");
+        }
+        int rules = recurring.usingAccount(account.id());
+        if (rules > 0) {
+            throw new IllegalArgumentException("\"" + account.name() + "\" is used by " + rules
+                    + (rules == 1 ? " recurring transaction" : " recurring transactions") + ". Change or delete "
+                    + (rules == 1 ? "it" : "them") + " first.");
         }
         if (accounts.findAll().size() <= 1) {
             throw new IllegalArgumentException("Keep at least one account");
@@ -396,7 +411,8 @@ public final class LedgerService {
             // What it is now, looked up by id: a rename changes the name.
             Category stored = categories.findAll().stream().filter(c -> c.id() == category.id())
                     .findFirst().orElse(null);
-            if (stored != null && stored.kind() != category.kind() && categories.usage(category.id()) > 0) {
+            if (stored != null && stored.kind() != category.kind() && (categories.usage(category.id()) > 0
+                    || recurring.usingCategory(category.id()) > 0 || budgets.usingCategory(category.id()) > 0)) {
                 throw new IllegalArgumentException("\"" + stored.name() + "\" is in use, so it stays a category for "
                         + (stored.kind() == Category.Kind.INCOME ? "income" : "expenses"));
             }
@@ -419,6 +435,15 @@ public final class LedgerService {
         if (used > 0) {
             throw new IllegalArgumentException("\"" + category.name() + "\" is used by " + used
                     + (used == 1 ? " transaction" : " transactions") + ". Move them to another category first.");
+        }
+        int rules = recurring.usingCategory(category.id());
+        int limits = budgets.usingCategory(category.id());
+        if (rules + limits > 0) {
+            throw new IllegalArgumentException("\"" + category.name() + "\" is used by "
+                    + (rules > 0 ? rules + (rules == 1 ? " recurring transaction" : " recurring transactions") : "")
+                    + (rules > 0 && limits > 0 ? " and " : "")
+                    + (limits > 0 ? limits + (limits == 1 ? " budget" : " budgets") : "")
+                    + ". Change or delete " + (rules + limits == 1 ? "it" : "them") + " first.");
         }
         categories.delete(category.id());
     }
@@ -497,7 +522,9 @@ public final class LedgerService {
         // Amounts are whole minor units: a cent is not a yen. With other
         // decimals, every amount already stored would change its meaning.
         if (next.digits() != base.digits()
-                && (transactions.count() > 0 || accounts.findAll().stream().anyMatch(a -> a.openingCents() != 0))) {
+                && (transactions.count() > 0 || budgets.count() > 0
+                        || accounts.findAll().stream().anyMatch(a -> a.openingCents() != 0)
+                        || !recurring.findAll().isEmpty())) {
             throw new IllegalArgumentException(next.code() + " has " + next.digits() + " decimals and " + base.code()
                     + " has " + base.digits() + ", so the amounts already recorded would change");
         }
@@ -726,5 +753,359 @@ public final class LedgerService {
             }
         }
         return new NetWorth(have, owe, List.copyOf(uncounted));
+    }
+
+    // --- budgets ---------------------------------------------------------------
+
+    /** Every budget: the overall one first, then by category. */
+    public List<Budget> allBudgets() throws SQLException {
+        return budgets.findAll();
+    }
+
+    /** Saves a new budget, or changes one (a non-zero id). */
+    public Budget save(Budget budget) throws SQLException {
+        if (budget.period() == null) {
+            throw new IllegalArgumentException("Choose how long a budget period is");
+        }
+        if (budget.amountCents() <= 0) {
+            throw new IllegalArgumentException("The limit must be more than zero");
+        }
+        if (budget.amountCents() > largest(baseCurrency())) {
+            throw new IllegalArgumentException("That limit is too large");
+        }
+        if (budget.category() != null && budget.category().kind() != Category.Kind.EXPENSE) {
+            throw new IllegalArgumentException("A budget limits spending: choose a category for expenses");
+        }
+        if (budget.period() == Budget.Period.CUSTOM) {
+            if (budget.startsOn() == null || budget.endsOn() == null) {
+                throw new IllegalArgumentException("Choose the first and the last day");
+            }
+            if (budget.endsOn().isBefore(budget.startsOn())) {
+                throw new IllegalArgumentException("The last day comes before the first");
+            }
+        }
+        long categoryId = budget.category() == null ? 0 : budget.category().id();
+        boolean taken = budgets.findAll().stream().anyMatch(other -> other.id() != budget.id()
+                && other.period() == budget.period() && budget.period() != Budget.Period.CUSTOM
+                && (other.category() == null ? 0 : other.category().id()) == categoryId);
+        if (taken) {
+            throw new IllegalArgumentException("There is already a " + budget.period().label().toLowerCase(java.util.Locale.ROOT)
+                    + " budget for " + (budget.category() == null ? "all spending" : budget.category().name()));
+        }
+        Budget valid = budget.period() == Budget.Period.CUSTOM ? budget
+                : new Budget(budget.id(), budget.category(), budget.period(), budget.amountCents(), null, null);
+        if (valid.id() == 0) {
+            return budgets.insert(valid);
+        }
+        budgets.update(valid);
+        return valid;
+    }
+
+    public void deleteBudget(Budget budget) throws SQLException {
+        budgets.delete(budget.id());
+    }
+
+    /**
+     * Where a budget stands in the period {@code today} falls in.
+     *
+     * @param budget    the budget
+     * @param from      the period's first day
+     * @param to        the period's last day
+     * @param spentCents what was spent so far, in the base currency
+     * @param leftPerDayCents what can still be spent each remaining day,
+     *                  today included; 0 when nothing is left or the period
+     *                  is over
+     * @param projectedCents what the period ends at if spending goes on as it
+     *                  has: the pace so far, carried to the last day
+     */
+    public record BudgetProgress(Budget budget, LocalDate from, LocalDate to, long spentCents, long leftPerDayCents,
+            long projectedCents) {
+
+        /** How the budget stands, for its colour. */
+        public enum State { FINE, CLOSE, OVER }
+
+        /** Past the limit; at 80% or heading past it; otherwise fine. */
+        public State state() {
+            if (spentCents > budget.amountCents()) {
+                return State.OVER;
+            }
+            return spentCents * 10 >= budget.amountCents() * 8 || projectedCents > budget.amountCents()
+                    ? State.CLOSE : State.FINE;
+        }
+
+        /** How much of the limit is spent, from 0 up; past 1 when over. */
+        public double fraction() {
+            return (double) spentCents / budget.amountCents();
+        }
+    }
+
+    /**
+     * Every budget's standing on {@code today}. Weeks start on the day the
+     * user chose in Settings, which the caller passes in: it is a setting,
+     * not part of the data.
+     */
+    public List<BudgetProgress> budgetProgress(LocalDate today, java.time.DayOfWeek weekStart) throws SQLException {
+        List<BudgetProgress> all = new ArrayList<>();
+        for (Budget budget : budgets.findAll()) {
+            LocalDate[] period = budget.periodOf(today, weekStart);
+            long categoryId = budget.category() == null ? 0 : budget.category().id();
+            long spent = transactions.spent(categoryId, period[0], period[1]);
+            long days = java.time.temporal.ChronoUnit.DAYS.between(period[0], period[1]) + 1;
+            long elapsed = today.isBefore(period[0]) ? 0
+                    : java.time.temporal.ChronoUnit.DAYS.between(period[0], today.isAfter(period[1]) ? period[1] : today) + 1;
+            long remaining = today.isAfter(period[1]) ? 0 : days - Math.max(0, elapsed - 1);
+            long left = Math.max(0, budget.amountCents() - spent);
+            long perDay = remaining == 0 ? 0 : left / remaining;
+            long projected = elapsed == 0 ? spent : BigDecimal.valueOf(spent).multiply(BigDecimal.valueOf(days))
+                    .divide(BigDecimal.valueOf(elapsed), 0, RoundingMode.HALF_EVEN).longValueExact();
+            all.add(new BudgetProgress(budget, period[0], period[1], spent, perDay, projected));
+        }
+        return all;
+    }
+
+    // --- recurring --------------------------------------------------------------
+
+    /** The most occurrences a rule records in one go, catching up. */
+    public static final int CATCH_UP_LIMIT = 100;
+
+    /** Every rule, by description. */
+    public List<Recurring> allRecurring() throws SQLException {
+        return recurring.findAll();
+    }
+
+    /**
+     * Saves a new rule, or changes one. What it would record is checked as a
+     * transaction is, on its first day; a transfer between currencies needs
+     * the amount that arrives, since a rate would only guess it.
+     */
+    public Recurring save(Recurring rule) throws SQLException {
+        if (rule.frequency() == null) {
+            throw new IllegalArgumentException("Choose how often it repeats");
+        }
+        if (rule.every() < 1 || rule.every() > 366) {
+            throw new IllegalArgumentException("It repeats every 1 to 366 " + rule.frequency().key() + "s");
+        }
+        if (rule.startsOn() == null) {
+            throw new IllegalArgumentException("Choose the first day");
+        }
+        if (rule.endsOn() != null && rule.endsOn().isBefore(rule.startsOn())) {
+            throw new IllegalArgumentException("It ends before it starts");
+        }
+        Transaction checked = checkShape(rule.toTransaction(rule.startsOn()));
+        Recurring valid = new Recurring(rule.id(), checked.type(), checked.account(), checked.amountCents(),
+                checked.toAccount(), checked.toAmountCents(), checked.category(), checked.merchant(),
+                checked.description(), checked.note(), rule.frequency(), rule.every(), rule.startsOn(), rule.endsOn(),
+                rule.done(), rule.bill(), rule.askFirst(), rule.paused());
+        if (valid.id() == 0) {
+            return recurring.insert(valid);
+        }
+        recurring.update(valid);
+        return valid;
+    }
+
+    /**
+     * Checks a transaction as {@link #save(Transaction)} does, except for its
+     * rate: a rule's occurrences are converted on their own days.
+     */
+    private Transaction checkShape(Transaction t) throws SQLException {
+        String base = baseCurrency().code();
+        Transaction asIfBase = t;
+        if (t.account() != null && !t.account().currency().equals(base)) {
+            asIfBase = new Transaction(t.id(), t.type(), t.account(), t.amountCents(), t.toAccount(),
+                    t.toAmountCents(), t.category(), t.merchant(), t.description(), t.date(), t.note(), t.tags(),
+                    new Transaction.Conversion(BigDecimal.ONE, 0), null);
+        }
+        return validate(asIfBase);
+    }
+
+    /** Removes a rule. What it recorded stays, as ordinary transactions. */
+    public void deleteRecurring(Recurring rule) throws SQLException {
+        recurring.delete(rule.id());
+    }
+
+    /** How many occurrences of a rule fall on or before {@code today} and are not dealt with yet. */
+    public int overdue(Recurring rule, LocalDate today) {
+        int count = 0;
+        for (int n = rule.done(); count <= CATCH_UP_LIMIT; n++) {
+            LocalDate day = rule.occurrence(n);
+            if (day.isAfter(today) || (rule.endsOn() != null && day.isAfter(rule.endsOn()))) {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    /**
+     * An occurrence waiting for the user: one that asks first, or one that
+     * could not be recorded by itself.
+     *
+     * @param rule   its rule, as it stands
+     * @param day    its date
+     * @param reason why it waits: null when the rule asks first
+     */
+    public record Due(Recurring rule, LocalDate day, String reason) {
+    }
+
+    /**
+     * What recording the due occurrences did.
+     *
+     * @param recorded how many were recorded
+     * @param waiting  the ones left for the user
+     */
+    public record Catch(int recorded, List<Due> waiting) {
+    }
+
+    /**
+     * Records every occurrence that has fallen due by {@code today}, for rules
+     * that do not ask first and are not paused, at most
+     * {@link #CATCH_UP_LIMIT} per rule. Each is recorded and counted on its
+     * rule in one change, so none is ever recorded twice. One that cannot be
+     * recorded (in another currency, with no rate for its day) stops its rule
+     * there and waits for the user.
+     */
+    public Catch recordDue(LocalDate today) throws SQLException {
+        int recorded = 0;
+        List<Due> waiting = new ArrayList<>();
+        for (Recurring rule : recurring.findAll()) {
+            if (rule.paused()) {
+                continue;
+            }
+            Recurring current = rule;
+            for (int n = 0; n < CATCH_UP_LIMIT; n++) {
+                LocalDate day = current.nextDue();
+                if (day == null || day.isAfter(today)) {
+                    break;
+                }
+                if (current.askFirst()) {
+                    waiting.add(new Due(current, day, null));
+                    break;
+                }
+                Transaction valid;
+                try {
+                    valid = validate(current.toTransaction(day));
+                } catch (IllegalArgumentException e) {
+                    waiting.add(new Due(current, day, e.getMessage()));
+                    break;
+                }
+                if (recurring.recordOccurrence(current, valid) == null) {
+                    break;
+                }
+                recorded++;
+                current = current.withDone(current.done() + 1);
+            }
+        }
+        return new Catch(recorded, waiting);
+    }
+
+    /**
+     * Records one waiting occurrence, as the user asked. {@code rate}, when
+     * given, is the rate the user typed for an account in another currency.
+     */
+    public Transaction record(Due due, BigDecimal rate) throws SQLException {
+        Transaction occurrence = due.rule().toTransaction(due.day());
+        if (rate != null) {
+            occurrence = new Transaction(0, occurrence.type(), occurrence.account(), occurrence.amountCents(),
+                    occurrence.toAccount(), occurrence.toAmountCents(), occurrence.category(), occurrence.merchant(),
+                    occurrence.description(), occurrence.date(), occurrence.note(), occurrence.tags(),
+                    new Transaction.Conversion(rate, 0), null);
+        }
+        Transaction saved = recurring.recordOccurrence(due.rule(), validate(occurrence));
+        if (saved == null) {
+            throw new IllegalArgumentException("This occurrence was dealt with already");
+        }
+        return saved;
+    }
+
+    /**
+     * The occurrences waiting for the user on {@code today}, without recording
+     * anything: the next one of each rule that asks first, and of each that
+     * could not be recorded by itself, with the reason.
+     */
+    public List<Due> waiting(LocalDate today) throws SQLException {
+        List<Due> waiting = new ArrayList<>();
+        for (Recurring rule : recurring.findAll()) {
+            LocalDate day = rule.nextDue();
+            if (rule.paused() || day == null || day.isAfter(today)) {
+                continue;
+            }
+            if (rule.askFirst()) {
+                waiting.add(new Due(rule, day, null));
+                continue;
+            }
+            try {
+                validate(rule.toTransaction(day));
+            } catch (IllegalArgumentException e) {
+                waiting.add(new Due(rule, day, e.getMessage()));
+            }
+        }
+        waiting.sort(Comparator.comparing(Due::day));
+        return waiting;
+    }
+
+    /** Lets one waiting occurrence go, recording nothing. */
+    public void skip(Due due) throws SQLException {
+        if (!recurring.skipOccurrence(due.rule())) {
+            throw new IllegalArgumentException("This occurrence was dealt with already");
+        }
+    }
+
+    /**
+     * The bills due in the next {@code days} days, today included, soonest
+     * first, with each one's date: every occurrence, so a weekly bill shows
+     * each week.
+     */
+    public List<Due> upcomingBills(LocalDate today, int days) throws SQLException {
+        LocalDate until = today.plusDays(days - 1L);
+        List<Due> bills = new ArrayList<>();
+        for (Recurring rule : recurring.findAll()) {
+            if (!rule.bill() || rule.paused()) {
+                continue;
+            }
+            for (int n = rule.done(); n < rule.done() + 400; n++) {
+                LocalDate day = rule.occurrence(n);
+                if (day.isAfter(until) || (rule.endsOn() != null && day.isAfter(rule.endsOn()))) {
+                    break;
+                }
+                if (!day.isBefore(today)) {
+                    bills.add(new Due(rule, day, null));
+                }
+            }
+        }
+        bills.sort(Comparator.comparing(Due::day).thenComparing(due -> due.rule().description()));
+        return bills;
+    }
+
+    /** How many transactions a rule has recorded. */
+    public int recordedBy(Recurring rule) throws SQLException {
+        return transactions.recordedBy(rule.id());
+    }
+
+    // --- rates in use --------------------------------------------------------------
+
+    /**
+     * The rate in effect today for each currency in use, when there is one;
+     * a currency with none is listed with none, so the gap shows.
+     */
+    public java.util.Map<String, Optional<ExchangeRate>> ratesInUse(LocalDate today) throws SQLException {
+        java.util.Map<String, Optional<ExchangeRate>> inUse = new java.util.TreeMap<>();
+        for (String code : currenciesInUse()) {
+            inUse.put(code, currencies.rateOn(code, today));
+        }
+        return inUse;
+    }
+
+    /**
+     * A rate to suggest for {@code code} on {@code day}, when the user has
+     * none to hand: the latest known on or before it, else the nearest after
+     * it. Only a suggestion; nothing is saved.
+     */
+    public Optional<ExchangeRate> suggestRate(String code, LocalDate day) throws SQLException {
+        Optional<ExchangeRate> before = currencies.rateOn(code, day);
+        if (before.isPresent()) {
+            return before;
+        }
+        return currencies.rates().stream().filter(rate -> rate.currency().equals(code))
+                .min(Comparator.comparing(ExchangeRate::effectiveOn));
     }
 }

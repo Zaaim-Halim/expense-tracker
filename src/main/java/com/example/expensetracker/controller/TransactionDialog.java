@@ -150,7 +150,21 @@ public final class TransactionDialog {
         Label rateHint = new Label();
         rateHint.getStyleClass().add("field-hint");
         rateHint.setWrapText(true);
-        VBox rateField = field("Rate", new VBox(6, rate, rateHint));
+        // A rate to use when the day has none: offered, never filled in.
+        Button useSuggested = new Button();
+        useSuggested.setGraphic(Icons.of(Icons.CHECK));
+        useSuggested.getStyleClass().add("link");
+        useSuggested.setVisible(false);
+        useSuggested.setManaged(false);
+        Button currentRates = new Button();
+        currentRates.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
+        currentRates.getStyleClass().add("icon-button");
+        currentRates.setTooltip(new javafx.scene.control.Tooltip("Current rates"));
+        currentRates.setOnAction(event -> RatesInUseDialog.show(dialog.getDialogPane().getScene().getWindow(), service));
+        HBox rateInput = new HBox(6, rate, currentRates);
+        HBox.setHgrow(rate, Priority.ALWAYS);
+        rateInput.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        VBox rateField = field("Rate", new VBox(6, rateInput, rateHint, useSuggested));
         // A transfer between currencies: what arrived, as the bank says.
         TextField arrived = new TextField(existing == null || existing.toAccount() == null
                 || existing.toAccount().currency().equals(existing.account().currency()) ? ""
@@ -275,6 +289,25 @@ public final class TransactionDialog {
                         rate.setText("");
                     }
                 }
+                // No rate for the day: the nearest known one, to take or leave.
+                java.util.Optional<com.example.expensetracker.model.ExchangeRate> suggestion = java.util.Optional.empty();
+                if (rate.getText().isBlank() && date.getValue() != null) {
+                    try {
+                        suggestion = service.suggestRate(code, date.getValue());
+                    } catch (SQLException e) {
+                        suggestion = java.util.Optional.empty();
+                    }
+                }
+                suggestion.ifPresent(suggested -> {
+                    useSuggested.setText("Use " + suggested.rate().toPlainString() + " (" + suggested.source().label()
+                            + ", " + Ui.date(suggested.effectiveOn()) + ")");
+                    useSuggested.setOnAction(event -> {
+                        rateTyped[0] = true;
+                        rate.setText(suggested.rate().toPlainString());
+                    });
+                });
+                useSuggested.setVisible(suggestion.isPresent());
+                useSuggested.setManaged(suggestion.isPresent());
                 String shown;
                 try {
                     long minor = Money.parse(elsewhere ? charged.getText() : amount.getText(), Ui.unit(code).digits());

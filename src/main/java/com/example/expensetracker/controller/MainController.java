@@ -25,6 +25,8 @@ public final class MainController {
         DASHBOARD("/fxml/dashboard.fxml"),
         TRANSACTIONS("/fxml/transactions.fxml"),
         ACCOUNTS("/fxml/accounts.fxml"),
+        BUDGETS("/fxml/budgets.fxml"),
+        RECURRING("/fxml/recurring.fxml"),
         CATEGORIES("/fxml/categories.fxml"),
         CURRENCIES("/fxml/currencies.fxml"),
         SETTINGS("/fxml/settings.fxml");
@@ -40,6 +42,8 @@ public final class MainController {
     @FXML private ToggleButton dashboardNav;
     @FXML private ToggleButton transactionsNav;
     @FXML private ToggleButton accountsNav;
+    @FXML private ToggleButton budgetsNav;
+    @FXML private ToggleButton recurringNav;
     @FXML private ToggleButton categoriesNav;
     @FXML private ToggleButton currenciesNav;
     @FXML private ToggleButton settingsNav;
@@ -57,12 +61,16 @@ public final class MainController {
         dashboardNav.setGraphic(Icons.of(Icons.DASHBOARD));
         transactionsNav.setGraphic(Icons.of(Icons.LIST));
         accountsNav.setGraphic(Icons.of(Icons.WALLET));
+        budgetsNav.setGraphic(Icons.of(Icons.PIE_CHART));
+        recurringNav.setGraphic(Icons.of(Icons.REPEAT));
         categoriesNav.setGraphic(Icons.of(Icons.TAG));
         currenciesNav.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
         settingsNav.setGraphic(Icons.of(Icons.SETTINGS));
         dashboardNav.setTooltip(new Tooltip(Shortcuts.hint("Dashboard", Shortcuts.DASHBOARD)));
         transactionsNav.setTooltip(new Tooltip(Shortcuts.hint("Transactions", Shortcuts.TRANSACTIONS)));
         accountsNav.setTooltip(new Tooltip(Shortcuts.hint("Accounts", Shortcuts.ACCOUNTS)));
+        budgetsNav.setTooltip(new Tooltip(Shortcuts.hint("Budgets", Shortcuts.BUDGETS)));
+        recurringNav.setTooltip(new Tooltip(Shortcuts.hint("Recurring", Shortcuts.RECURRING)));
         categoriesNav.setTooltip(new Tooltip(Shortcuts.hint("Categories", Shortcuts.CATEGORIES)));
         currenciesNav.setTooltip(new Tooltip(Shortcuts.hint("Currencies", Shortcuts.CURRENCIES)));
         settingsNav.setTooltip(new Tooltip(Shortcuts.hint("Settings", Shortcuts.SETTINGS)));
@@ -72,8 +80,8 @@ public final class MainController {
         logo.setFitHeight(34);
         logo.setSmooth(true);
         brandIcon.setGraphic(logo);
-        for (ToggleButton button : new ToggleButton[] {dashboardNav, transactionsNav, accountsNav, categoriesNav,
-            currenciesNav, settingsNav}) {
+        for (ToggleButton button : new ToggleButton[] {dashboardNav, transactionsNav, accountsNav, budgetsNav,
+            recurringNav, categoriesNav, currenciesNav, settingsNav}) {
             button.setToggleGroup(navigation);
         }
         // A section stays selected: clicking the current one again is not "none".
@@ -125,6 +133,8 @@ public final class MainController {
         scene.getAccelerators().put(Shortcuts.DASHBOARD, () -> select(Section.DASHBOARD));
         scene.getAccelerators().put(Shortcuts.TRANSACTIONS, () -> select(Section.TRANSACTIONS));
         scene.getAccelerators().put(Shortcuts.ACCOUNTS, () -> select(Section.ACCOUNTS));
+        scene.getAccelerators().put(Shortcuts.BUDGETS, () -> select(Section.BUDGETS));
+        scene.getAccelerators().put(Shortcuts.RECURRING, () -> select(Section.RECURRING));
         scene.getAccelerators().put(Shortcuts.CATEGORIES, () -> select(Section.CATEGORIES));
         scene.getAccelerators().put(Shortcuts.CURRENCIES, () -> select(Section.CURRENCIES));
         scene.getAccelerators().put(Shortcuts.SETTINGS, () -> select(Section.SETTINGS));
@@ -147,6 +157,8 @@ public final class MainController {
             case DASHBOARD -> dashboardNav;
             case TRANSACTIONS -> transactionsNav;
             case ACCOUNTS -> accountsNav;
+            case BUDGETS -> budgetsNav;
+            case RECURRING -> recurringNav;
             case CATEGORIES -> categoriesNav;
             case CURRENCIES -> currenciesNav;
             case SETTINGS -> settingsNav;
@@ -159,6 +171,12 @@ public final class MainController {
         }
         if (toggle == accountsNav) {
             return Section.ACCOUNTS;
+        }
+        if (toggle == budgetsNav) {
+            return Section.BUDGETS;
+        }
+        if (toggle == recurringNav) {
+            return Section.RECURRING;
         }
         if (toggle == currenciesNav) {
             return Section.CURRENCIES;
@@ -187,12 +205,18 @@ public final class MainController {
             page.setup(service, this::dataChanged);
             if (page instanceof DashboardController dashboard) {
                 dashboard.onShowAll(() -> select(Section.TRANSACTIONS));
+                dashboard.onShowPlans(() -> select(Section.BUDGETS), () -> select(Section.RECURRING));
             }
             pages.put(section, page);
             return root;
         } catch (IOException e) {
             throw new IllegalStateException("the " + section + " page could not be built", e);
         }
+    }
+
+    /** Shows what changed outside the window's own actions, such as items recorded at start. */
+    public void refreshShown() {
+        dataChanged();
     }
 
     /** Something was saved or deleted: the page on screen shows it at once. */

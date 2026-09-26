@@ -55,5 +55,23 @@
         <VBox fx:id="recentRows" spacing="4"/>
       </VBox>
     </HBox>
+    <HBox fx:id="planRow" spacing="16">
+      <VBox fx:id="budgetCard" styleClass="card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="520">
+        <HBox alignment="CENTER_LEFT">
+          <Label text="Budgets" styleClass="card-title"/>
+          <Region HBox.hgrow="ALWAYS"/>
+          <Button fx:id="budgetsButton" text="All budgets" styleClass="link"/>
+        </HBox>
+        <VBox fx:id="budgetRows" spacing="14"/>
+      </VBox>
+      <VBox fx:id="comingCard" styleClass="card" spacing="12" HBox.hgrow="ALWAYS" prefWidth="420">
+        <HBox alignment="CENTER_LEFT">
+          <Label text="Coming up" styleClass="card-title"/>
+          <Region HBox.hgrow="ALWAYS"/>
+          <Button fx:id="recurringButton" text="Recurring" styleClass="link"/>
+        </HBox>
+        <VBox fx:id="comingRows" spacing="6"/>
+      </VBox>
+    </HBox>
   </VBox>
 </ScrollPane>

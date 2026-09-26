@@ -127,6 +127,19 @@ public final class Render {
                     .filter(t -> t.toAccount() != null && t.toAccount().currency().equals("USD")).findFirst()
                     .orElseThrow()), directory.resolve("dialog-edit-transfer-currencies.png"));
             dialog(RateDialog.create(stage, service, null), directory.resolve("dialog-new-rate.png"));
+            dialog(RateDialog.create(stage, service, service.rates().stream()
+                    .filter(r -> r.currency().equals("USD")).findFirst().orElseThrow()),
+                    directory.resolve("dialog-edit-rate.png"));
+            dialog(RatesInUseDialog.create(stage, service), directory.resolve("dialog-current-rates.png"));
+            dialog(BudgetDialog.create(stage, service, null), directory.resolve("dialog-new-budget.png"));
+            dialog(BudgetDialog.create(stage, service, service.allBudgets().get(1)),
+                    directory.resolve("dialog-edit-budget.png"));
+            dialog(RecurringDialog.create(stage, service, null, null), directory.resolve("dialog-new-recurring.png"));
+            dialog(RecurringDialog.create(stage, service, service.allRecurring().stream()
+                    .filter(r -> r.askFirst()).findFirst().orElseThrow(), null),
+                    directory.resolve("dialog-edit-recurring.png"));
+            dialog(RecurringDialog.create(stage, service, null, all.get(0)),
+                    directory.resolve("dialog-make-recurring.png"));
             dialog(TransactionDialog.create(stage, service, all.stream().filter(t -> t.original() != null)
                     .findFirst().orElseThrow()), directory.resolve("dialog-edit-priced.png"));
             dialog(CurrencyDialog.create(stage, service), directory.resolve("dialog-new-currency.png"));
@@ -149,6 +162,10 @@ public final class Render {
                     .filter(t -> t.account().currency().equals("USD")).findFirst().orElseThrow()),
                     directory.resolve("dialog-edit-foreign-dark.png"));
             dialog(RateDialog.create(stage, service, null), directory.resolve("dialog-new-rate-dark.png"));
+            dialog(RatesInUseDialog.create(stage, service), directory.resolve("dialog-current-rates-dark.png"));
+            dialog(BudgetDialog.create(stage, service, null), directory.resolve("dialog-new-budget-dark.png"));
+            dialog(RecurringDialog.create(stage, service, null, null),
+                    directory.resolve("dialog-new-recurring-dark.png"));
             Appearance.change(light.withAccent(Settings.Accent.ROSE));
             main.select(MainController.Section.DASHBOARD);
             write(scene, directory.resolve("dashboard-rose.png"));
@@ -473,6 +490,36 @@ public final class Render {
                 java.math.BigDecimal.ONE, "USD", new java.math.BigDecimal("1.1403"), "GBP",
                 new java.math.BigDecimal("0.8435"))),
                 () -> new com.example.expensetracker.service.EcbRates.Feed(today, wider));
+
+        // Budgets, and what repeats: recorded as a start would record it.
+        service.save(new com.example.expensetracker.model.Budget(0, null,
+                com.example.expensetracker.model.Budget.Period.MONTH, 200_000, null, null));
+        service.save(new com.example.expensetracker.model.Budget(0, service.categoryNamed("Food"),
+                com.example.expensetracker.model.Budget.Period.MONTH, 20_000, null, null));
+        service.save(new com.example.expensetracker.model.Budget(0, service.categoryNamed("Transport"),
+                com.example.expensetracker.model.Budget.Period.WEEK, 6_000, null, null));
+        java.time.LocalDate monthStart = today.withDayOfMonth(1);
+        service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.EXPENSE, bank, 125_000, null,
+                0, service.categoryNamed("Housing"), "Landlord", "Rent", "",
+                com.example.expensetracker.model.Recurring.Frequency.MONTH, 1, today.plusDays(3).minusMonths(2), null,
+                0, true, false, false));
+        service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.INCOME, bank, 320_000, null,
+                0, service.categoryNamed("Salary"), "Acme Ltd", "Salary", "",
+                com.example.expensetracker.model.Recurring.Frequency.MONTH, 1, monthStart.plusMonths(1), null, 0,
+                false, false, false));
+        service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.EXPENSE, bank, 7_500, null,
+                0, service.categoryNamed("Utilities"), "Power & Co", "Electricity", "",
+                com.example.expensetracker.model.Recurring.Frequency.MONTH, 1, today.minusDays(1), null, 0, true,
+                true, false));
+        service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.EXPENSE, travel, 1_599, null,
+                0, service.categoryNamed("Entertainment"), "", "Streaming", "",
+                com.example.expensetracker.model.Recurring.Frequency.MONTH, 1, today.plusDays(9), null, 0, true,
+                false, false));
+        service.save(new com.example.expensetracker.model.Recurring(0, Transaction.Type.EXPENSE, wallet, 3_000, null,
+                0, service.categoryNamed("Health"), "", "Gym", "",
+                com.example.expensetracker.model.Recurring.Frequency.WEEK, 2, today.plusDays(4), null, 0, true, false,
+                true));
+        service.recordDue(today);
         // Paid in pounds with the euro card: the price kept beside the charge.
         service.save(new Transaction(0, Transaction.Type.EXPENSE, card, 2_988, null, 0,
                 service.categoryNamed("Entertainment"), "National Gallery", "Exhibition in London", today, "",

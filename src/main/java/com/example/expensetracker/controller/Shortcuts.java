@@ -18,8 +18,10 @@ final class Shortcuts {
     static final KeyCombination DASHBOARD = new KeyCodeCombination(KeyCode.DIGIT1, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination TRANSACTIONS = new KeyCodeCombination(KeyCode.DIGIT2, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination ACCOUNTS = new KeyCodeCombination(KeyCode.DIGIT3, KeyCombination.SHORTCUT_DOWN);
-    static final KeyCombination CATEGORIES = new KeyCodeCombination(KeyCode.DIGIT4, KeyCombination.SHORTCUT_DOWN);
-    static final KeyCombination CURRENCIES = new KeyCodeCombination(KeyCode.DIGIT5, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination BUDGETS = new KeyCodeCombination(KeyCode.DIGIT4, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination RECURRING = new KeyCodeCombination(KeyCode.DIGIT5, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination CATEGORIES = new KeyCodeCombination(KeyCode.DIGIT6, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination CURRENCIES = new KeyCodeCombination(KeyCode.DIGIT7, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination SETTINGS = new KeyCodeCombination(KeyCode.COMMA, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination NEW_TRANSACTION = new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination FIND = new KeyCodeCombination(KeyCode.F, KeyCombination.SHORTCUT_DOWN);
@@ -38,6 +40,8 @@ final class Shortcuts {
                 new Entry(DASHBOARD.getDisplayText(), "Dashboard"),
                 new Entry(TRANSACTIONS.getDisplayText(), "Transactions"),
                 new Entry(ACCOUNTS.getDisplayText(), "Accounts"),
+                new Entry(BUDGETS.getDisplayText(), "Budgets"),
+                new Entry(RECURRING.getDisplayText(), "Recurring"),
                 new Entry(CATEGORIES.getDisplayText(), "Categories"),
                 new Entry(CURRENCIES.getDisplayText(), "Currencies"),
                 new Entry(SETTINGS.getDisplayText(), "Settings"),

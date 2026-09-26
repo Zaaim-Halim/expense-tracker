@@ -74,24 +74,65 @@ public final class TransactionRepository {
 
     /** Adds a transaction and its tags, all or nothing. */
     public Transaction insert(Transaction transaction) throws SQLException {
-        return inTransaction(() -> {
-            Transaction saved;
-            try (PreparedStatement insert = connection.prepareStatement("""
-                    INSERT INTO transactions(type, account_id, amount_cents, to_account_id,
-                                             to_amount_cents, category_id, merchant, description,
-                                             occurred_on, note, rate, base_amount_cents,
-                                             original_currency, original_amount_cents)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
-                bind(insert, transaction);
-                insert.executeUpdate();
-                try (ResultSet keys = insert.getGeneratedKeys()) {
-                    keys.next();
-                    saved = transaction.withId(keys.getLong(1));
-                }
+        return inTransaction(() -> insertLinked(transaction, 0));
+    }
+
+    /**
+     * Adds a transaction and its tags, recorded by rule {@code recurringId}
+     * (0 for none), within a transaction the caller holds: recording an
+     * occurrence and counting it on its rule are one change.
+     */
+    Transaction insertLinked(Transaction transaction, long recurringId) throws SQLException {
+        Transaction saved;
+        try (PreparedStatement insert = connection.prepareStatement("""
+                INSERT INTO transactions(type, account_id, amount_cents, to_account_id,
+                                         to_amount_cents, category_id, merchant, description,
+                                         occurred_on, note, rate, base_amount_cents,
+                                         original_currency, original_amount_cents, recurring_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+            bind(insert, transaction);
+            if (recurringId == 0) {
+                insert.setNull(15, Types.INTEGER);
+            } else {
+                insert.setLong(15, recurringId);
             }
-            writeTags(saved);
-            return saved;
-        });
+            insert.executeUpdate();
+            try (ResultSet keys = insert.getGeneratedKeys()) {
+                keys.next();
+                saved = transaction.withId(keys.getLong(1));
+            }
+        }
+        writeTags(saved);
+        return saved;
+    }
+
+    /** How many transactions rule {@code recurringId} recorded. */
+    public int recordedBy(long recurringId) throws SQLException {
+        try (PreparedStatement query =
+                connection.prepareStatement("SELECT COUNT(*) FROM transactions WHERE recurring_id = ?")) {
+            query.setLong(1, recurringId);
+            try (ResultSet rows = query.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
+        }
+    }
+
+    /** What was spent in the base currency between two days inclusive: on one category, or on all (0). */
+    public long spent(long categoryId, LocalDate from, LocalDate to) throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement("""
+                SELECT COALESCE(SUM(base_amount_cents), 0) FROM transactions
+                WHERE type = 'expense' AND occurred_on BETWEEN ? AND ?
+                  AND (? = 0 OR category_id = ?)""")) {
+            query.setString(1, from.toString());
+            query.setString(2, to.toString());
+            query.setLong(3, categoryId);
+            query.setLong(4, categoryId);
+            try (ResultSet rows = query.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
     }
 
     /** Changes a transaction and replaces its tags, all or nothing. */

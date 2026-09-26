@@ -34,6 +34,7 @@ public final class CurrenciesController implements Page {
 
     @FXML private Label summaryLabel;
     @FXML private Button newRateButton;
+    @FXML private Button currentRatesButton;
     @FXML private Button newCurrencyButton;
     @FXML private VBox baseRows;
     @FXML private VBox rateRows;
@@ -59,6 +60,8 @@ public final class CurrenciesController implements Page {
         this.dataChanged = changed;
         newRateButton.setGraphic(Icons.of(Icons.ADD));
         newRateButton.setOnAction(event -> editRate(null));
+        currentRatesButton.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
+        currentRatesButton.setOnAction(event -> RatesInUseDialog.show(window(), service));
         newCurrencyButton.setGraphic(Icons.of(Icons.ADD));
         newCurrencyButton.setOnAction(event -> {
             if (CurrencyDialog.show(window(), service)) {

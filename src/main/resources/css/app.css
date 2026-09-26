@@ -23,6 +23,7 @@
     -danger-solid: #dc2626;
     -positive: #15803d;
     -positive-soft: #f0fdf4;
+    -warning: #b45309;
     -kind-cash: #16a34a;
     -kind-bank: #2563eb;
     -kind-savings: #0d9488;
@@ -808,6 +809,7 @@
     -danger-soft: #3b1d22;
     -positive: #4ade80;
     -positive-soft: #14281c;
+    -warning: #fbbf24;
     -hover: #1f232d;
     -subtle: #1b1e27;
     -track: #242833;
@@ -899,6 +901,39 @@
 
 .amount-expense {
     -fx-text-fill: -text;
+}
+
+/* --- budgets and recurring ------------------------------------------------ */
+
+.budget-row {
+    -fx-padding: 14 0 14 0;
+    -fx-border-color: transparent transparent -border transparent;
+}
+
+.budget-fine { -fx-text-fill: -text; }
+.budget-close { -fx-text-fill: -warning; }
+.budget-over { -fx-text-fill: -danger; }
+
+.budget-fill-fine { -fx-background-color: -accent; }
+.budget-fill-close { -fx-background-color: -warning; }
+.budget-fill-over { -fx-background-color: -danger; }
+
+.bill-row {
+    -fx-padding: 6 0 6 0;
+}
+
+.coming-waiting {
+    -fx-text-fill: -warning;
+    -fx-font-weight: bold;
+}
+
+.setting-row.paused .row-title,
+.setting-row.paused .row-amount {
+    -fx-opacity: 0.55;
+}
+
+.rates-grid {
+    -fx-padding: 4 0 4 0;
 }
 
 .amount-original,

@@ -34,6 +34,13 @@ public final class DashboardController implements Page {
     @FXML private VBox recentRows;
     @FXML private Button newExpenseButton;
     @FXML private Button showAllButton;
+    @FXML private HBox planRow;
+    @FXML private VBox budgetCard;
+    @FXML private VBox budgetRows;
+    @FXML private Button budgetsButton;
+    @FXML private VBox comingCard;
+    @FXML private VBox comingRows;
+    @FXML private Button recurringButton;
 
     private LedgerService service;
     private Runnable dataChanged;
@@ -51,13 +58,65 @@ public final class DashboardController implements Page {
     }
 
     void onShowAll(Runnable action) {
-        showAllButton.setGraphic(Icons.of(Icons.ARROW_FORWARD));
-        showAllButton.setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
-        showAllButton.setOnAction(event -> action.run());
+        link(showAllButton, action);
+    }
+
+    /** Where "All budgets" and "Recurring" go. */
+    void onShowPlans(Runnable budgets, Runnable recurring) {
+        link(budgetsButton, budgets);
+        link(recurringButton, recurring);
+    }
+
+    private static void link(Button button, Runnable action) {
+        button.setGraphic(Icons.of(Icons.ARROW_FORWARD));
+        button.setContentDisplay(javafx.scene.control.ContentDisplay.RIGHT);
+        button.setOnAction(event -> action.run());
+    }
+
+    /**
+     * The budgets, and what is coming up: the occurrences waiting for the
+     * user and the next bills. Each card only when it has something to say.
+     */
+    private void refreshPlans() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.util.List<LedgerService.BudgetProgress> progress;
+        java.util.List<LedgerService.Due> waiting;
+        java.util.List<LedgerService.Due> bills;
+        try {
+            progress = service.budgetProgress(today, Appearance.formats().firstDayOfWeek());
+            waiting = service.waiting(today);
+            bills = service.upcomingBills(today, 14);
+        } catch (java.sql.SQLException e) {
+            planRow.setVisible(false);
+            planRow.setManaged(false);
+            return;
+        }
+        // The ones closest to their limit first: those are the ones to look at.
+        budgetRows.getChildren().setAll(progress.stream()
+                .sorted(java.util.Comparator.comparingDouble(LedgerService.BudgetProgress::fraction).reversed())
+                .limit(4).map(p -> BudgetsController.row(p, null, null)).toList());
+        comingRows.getChildren().clear();
+        if (!waiting.isEmpty()) {
+            Label wait = new Label(waiting.size() + (waiting.size() == 1 ? " recurring transaction waits"
+                    : " recurring transactions wait") + " for you to record or skip.");
+            wait.getStyleClass().add("coming-waiting");
+            wait.setWrapText(true);
+            comingRows.getChildren().add(wait);
+        }
+        bills.stream().limit(5).map(RecurringController::billRow).forEach(comingRows.getChildren()::add);
+        boolean anyBudget = !progress.isEmpty();
+        boolean anyComing = !comingRows.getChildren().isEmpty();
+        budgetCard.setVisible(anyBudget);
+        budgetCard.setManaged(anyBudget);
+        comingCard.setVisible(anyComing);
+        comingCard.setManaged(anyComing);
+        planRow.setVisible(anyBudget || anyComing);
+        planRow.setManaged(anyBudget || anyComing);
     }
 
     @Override
     public void refresh() {
+        refreshPlans();
         YearMonth month = YearMonth.now();
         monthLabel.setText(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault(Locale.Category.DISPLAY))
                 .format(month));

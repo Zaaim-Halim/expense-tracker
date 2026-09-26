@@ -15,6 +15,7 @@
       <Label text="Transactions" styleClass="page-title"/>
       <Label fx:id="summaryLabel" styleClass="page-subtitle"/>
     </VBox>
+    <Button fx:id="recurringButton" text="Make recurring" styleClass="secondary"/>
     <Button fx:id="duplicateButton" text="Duplicate" styleClass="secondary"/>
     <Button fx:id="editButton" text="Edit" styleClass="secondary"/>
     <Button fx:id="deleteButton" text="Delete" styleClass="secondary, danger-text"/>

@@ -393,4 +393,25 @@ class DatabaseTest {
                     "only a column with a default was added, so 2.2 may still open the file");
         }
     }
+
+    @Test
+    void a_schema_six_file_gets_budgets_and_recurring_and_keeps_every_rate_and_price() throws Exception {
+        Path file = dir.resolve("expenses.db");
+        try (java.io.InputStream in = DatabaseTest.class.getResourceAsStream("/schema-6.db")) {
+            Files.copy(in, file);
+        }
+        try (Database database = Database.open(file)) {
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            var rates = new CurrencyRepository(database).rates();
+            assertEquals(List.of("ALL:EXCHANGE_RATE_API", "USD:ECB", "USD:MANUAL"),
+                    rates.stream().map(rate -> rate.currency() + ":" + rate.source()).toList());
+            assertEquals(7_238, new TransactionRepository(database).expenseCountAndTotal()[1]);
+            assertEquals(List.of(), new BudgetRepository(database).findAll());
+            assertEquals(List.of(), new RecurringRepository(database).findAll());
+            assertEquals(0, new TransactionRepository(database).recordedBy(1));
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(5, count(after, "PRAGMA user_version"), "only additions, so 2.2 and 2.3 may still open it");
+        }
+    }
 }
