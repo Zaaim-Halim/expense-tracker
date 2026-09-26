@@ -2,7 +2,12 @@ package com.example.expensetracker.controller;
 
 import com.example.expensetracker.ExpenseTrackerApp;
 import com.example.expensetracker.model.Category;
+import com.example.expensetracker.model.CurrencyUnit;
+import com.example.expensetracker.service.LedgerService;
+import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
@@ -25,8 +30,49 @@ public final class Ui {
         return Appearance.formats().date(date);
     }
 
+    // The base currency and the user's own currencies, as the data holds
+    // them: read again whenever the data changes, so every page writes an
+    // amount with its currency's decimals.
+    private static CurrencyUnit base = CurrencyUnit.iso("EUR").orElseThrow();
+    private static Map<String, CurrencyUnit> custom = Map.of();
+
+    /** Reads the base currency and the user's currencies from the data. */
+    static void useCurrencies(LedgerService service) {
+        try {
+            base = service.baseCurrency();
+            Map<String, CurrencyUnit> own = new HashMap<>();
+            for (CurrencyUnit unit : service.customCurrencies()) {
+                own.put(unit.code(), unit);
+            }
+            custom = Map.copyOf(own);
+        } catch (SQLException | IllegalArgumentException e) {
+            // Kept as they were: amounts still read, with the last known decimals.
+        }
+    }
+
+    static CurrencyUnit baseCurrency() {
+        return base;
+    }
+
+    /** A currency by code, as far as the pages know it. */
+    static CurrencyUnit unit(String code) {
+        CurrencyUnit own = custom.get(code);
+        if (own != null) {
+            return own;
+        }
+        return CurrencyUnit.iso(code).orElse(base);
+    }
+
+    /** An amount in the base currency. */
     static String money(long cents) {
-        return Appearance.formats().money(cents);
+        return Appearance.formats().money(cents, base.digits());
+    }
+
+    /** An amount in a currency: its decimals, and its code unless it is the base currency. */
+    static String money(long minor, String code) {
+        CurrencyUnit currency = unit(code);
+        String amount = Appearance.formats().money(minor, currency.digits());
+        return currency.code().equals(base.code()) ? amount : amount + "\u00A0" + currency.code();
     }
 
     /** A round swatch in the category's colour. */
@@ -66,9 +112,9 @@ public final class Ui {
      */
     static String balance(com.example.expensetracker.model.Account account, long cents) {
         if (account.kind().liability() && cents < 0) {
-            return "Owed " + money(-cents);
+            return "Owed " + money(-cents, account.currency());
         }
-        return cents < 0 ? "−" + money(-cents) : money(cents);
+        return cents < 0 ? "−" + money(-cents, account.currency()) : money(cents, account.currency());
     }
 
     /** A tag, as a small outlined pill. */

@@ -88,7 +88,7 @@ public final class AccountRepository {
     }
 
     /**
-     * Every account's balance, in cents, by id: the opening balance, plus
+     * Every account's balance, in its own currency's minor units, by id: the opening balance, plus
      * income, minus expenses, minus transfers out, plus transfers in.
      */
     public Map<Long, Long> balances() throws SQLException {

@@ -914,6 +914,11 @@
     -fx-font-size: 12px;
 }
 
+.convert-result {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
 .field-hint {
     -fx-text-fill: -muted;
     -fx-font-size: 11.5px;

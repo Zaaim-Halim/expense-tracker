@@ -31,10 +31,36 @@ import java.util.Locale;
  * @param note          anything else, possibly empty
  * @param tags          free labels such as "travel": trimmed, none empty, and
  *                      no two differing only in case
+ * @param conversion    the amount in the base currency and the rate used;
+ *                      null until it is saved, when it is worked out
  */
 public record Transaction(long id, Type type, Account account, long amountCents, Account toAccount,
         long toAmountCents, Category category, String merchant, String description, LocalDate date,
-        String note, List<String> tags) {
+        String note, List<String> tags, Conversion conversion) {
+
+    /**
+     * What {@code amountCents} is in the base currency, and the rate used.
+     * Kept with the transaction, so a rate changed later never rewrites it.
+     *
+     * @param rate            units of the base currency for one unit of the
+     *                        account's currency; 1 when they are the same
+     * @param baseAmountCents the amount in the base currency's minor units
+     */
+    public record Conversion(java.math.BigDecimal rate, long baseAmountCents) {
+    }
+
+    /** A transaction whose conversion is worked out when it is saved. */
+    public Transaction(long id, Type type, Account account, long amountCents, Account toAccount,
+            long toAmountCents, Category category, String merchant, String description, LocalDate date,
+            String note, List<String> tags) {
+        this(id, type, account, amountCents, toAccount, toAmountCents, category, merchant, description, date,
+                note, tags, null);
+    }
+
+    /** The amount in the base currency: what totals add up. */
+    public long baseAmountCents() {
+        return conversion == null ? amountCents : conversion.baseAmountCents();
+    }
 
     public Transaction {
         merchant = merchant == null ? "" : merchant;
@@ -81,10 +107,10 @@ public record Transaction(long id, Type type, Account account, long amountCents,
     /** The same transaction with a database identity. */
     public Transaction withId(long newId) {
         return new Transaction(newId, type, account, amountCents, toAccount, toAmountCents, category,
-                merchant, description, date, note, tags);
+                merchant, description, date, note, tags, conversion);
     }
 
-    /** A copy to save as a new transaction, dated {@code on}. */
+    /** A copy to save as a new transaction, dated {@code on}; its conversion is worked out for that day. */
     public Transaction duplicate(LocalDate on) {
         return new Transaction(0, type, account, amountCents, toAccount, toAmountCents, category,
                 merchant, description, on, note, tags);

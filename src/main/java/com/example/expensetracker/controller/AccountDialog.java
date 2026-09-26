@@ -1,9 +1,11 @@
 package com.example.expensetracker.controller;
 
 import com.example.expensetracker.model.Account;
+import com.example.expensetracker.model.CurrencyUnit;
 import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.service.Money;
 import java.sql.SQLException;
+import java.util.List;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
@@ -44,10 +46,37 @@ public final class AccountDialog {
         kind.setMaxWidth(Double.MAX_VALUE);
         kind.setValue(existing == null ? Account.Kind.BANK : existing.kind());
 
+        ComboBox<CurrencyUnit> currency = new ComboBox<>();
+        List<CurrencyUnit> all;
+        int used;
+        try {
+            all = service.allCurrencies();
+            used = existing == null ? 0 : service.usage(existing);
+        } catch (SQLException e) {
+            all = List.of(Ui.baseCurrency());
+            used = 0;
+        }
+        currency.getItems().setAll(all);
+        currency.setVisibleRowCount(12);
+        currency.setMaxWidth(Double.MAX_VALUE);
+        String wanted = existing == null ? Ui.baseCurrency().code() : existing.currency();
+        currency.setValue(all.stream().filter(c -> c.code().equals(wanted)).findFirst().orElse(Ui.baseCurrency()));
+        Label currencyHint = new Label();
+        currencyHint.getStyleClass().add("field-hint");
+        currencyHint.setWrapText(true);
+        if (used > 0) {
+            // Its transactions were recorded in this currency.
+            currency.setDisable(true);
+            currencyHint.setText("It has transactions, so its currency stays " + existing.currency() + ".");
+        } else {
+            currencyHint.setText("Totals are in " + Ui.baseCurrency().code()
+                    + ", using the rates under Currencies.");
+        }
+
         // What is typed is what the user thinks of: the money in it, or for a
         // card or a loan the money owed. Stored the one way balances add up.
         TextField opening = new TextField(existing == null || existing.openingCents() == 0 ? ""
-                : Money.plain(Math.abs(existing.openingCents())));
+                : Money.plain(Math.abs(existing.openingCents()), Ui.unit(existing.currency()).digits()));
         opening.setPromptText("0.00");
         Label openingHint = new Label();
         openingHint.getStyleClass().add("field-hint");
@@ -69,7 +98,7 @@ public final class AccountDialog {
         error.setManaged(false);
 
         VBox form = new VBox(14, TransactionDialog.field("Name", name), TransactionDialog.field("Kind", kind),
-                openingField, error);
+                TransactionDialog.field("Currency", new VBox(6, currency, currencyHint)), openingField, error);
         form.getStyleClass().add("form");
         form.setPrefWidth(420);
         dialog.getDialogPane().setContent(form);
@@ -84,12 +113,13 @@ public final class AccountDialog {
         Account[] saved = new Account[1];
         saveButton.addEventFilter(ActionEvent.ACTION, event -> {
             try {
-                long cents = opening.getText().isBlank() ? 0 : parse(opening.getText());
+                CurrencyUnit chosen = currency.getValue() == null ? Ui.baseCurrency() : currency.getValue();
+                long cents = opening.getText().isBlank() ? 0 : parse(opening.getText(), chosen.digits());
                 if (kind.getValue() != null && kind.getValue().liability()) {
                     cents = -cents;
                 }
                 saved[0] = service.save(new Account(existing == null ? 0 : existing.id(), name.getText(),
-                        kind.getValue(), existing == null ? "" : existing.currency(), cents));
+                        kind.getValue(), chosen.code(), cents));
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);
@@ -104,13 +134,13 @@ public final class AccountDialog {
     }
 
     /** An amount of zero or more, as typed. */
-    private static long parse(String text) {
+    private static long parse(String text, int digits) {
         String cleaned = text.strip();
         // Zero is a fine opening balance; every other amount is read as money is.
         if (cleaned.matches("0+([.,]0*)?")) {
             return 0;
         }
-        return Money.parseCents(cleaned);
+        return Money.parse(cleaned, digits);
     }
 
     /** A kind of account: its icon and its name. */

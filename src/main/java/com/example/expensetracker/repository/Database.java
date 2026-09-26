@@ -36,7 +36,7 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 3;
+    public static final int SCHEMA = 4;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
@@ -45,8 +45,20 @@ public final class Database implements AutoCloseable {
      * 3 moves every expense into {@code transactions} and drops the
      * {@code expenses} table: code before it would find no expenses, or write
      * new ones where nothing reads them. So only schema 3's code may open it.
+     *
+     * <p>Schema 4 gives every account a currency and every transaction its
+     * amount in the base currency. Schema 3's code would add transactions
+     * with no converted amount, which every total then leaves out, and would
+     * add amounts in different currencies together. So it may not open it.
      */
-    public static final int COMPATIBILITY = 3;
+    public static final int COMPATIBILITY = 4;
+
+    /**
+     * The base currency schema 4 gives existing data: the one of the region
+     * the computer is set to, or this when that names none. Until an account
+     * in another currency exists, it can be changed freely.
+     */
+    public static final String FALLBACK_BASE = "EUR";
 
     /** The name the one account schema 3 creates from existing expenses is given. */
     public static final String FIRST_ACCOUNT = "Main account";
@@ -259,6 +271,9 @@ public final class Database implements AutoCloseable {
             if (schema < 3) {
                 moveToAccounts();
             }
+            if (schema < 4) {
+                addCurrencies(defaultBase());
+            }
             connection.commit();
         } catch (SQLException e) {
             connection.rollback();
@@ -431,6 +446,60 @@ public final class Database implements AutoCloseable {
             statement.execute("CREATE INDEX transaction_tags_by_tag ON transaction_tags(tag_id)");
             statement.execute("UPDATE meta SET value = '3' WHERE key = 'schema'");
             statement.execute("PRAGMA user_version = 3");
+        }
+    }
+
+    /** The currency of the region the computer is set to, if it has one. */
+    static String defaultBase() {
+        try {
+            java.util.Currency local = java.util.Currency.getInstance(
+                    java.util.Locale.getDefault(java.util.Locale.Category.FORMAT));
+            // Some regions name a pseudo-currency with no minor units (-1).
+            return local != null && local.getDefaultFractionDigits() >= 0 ? local.getCurrencyCode() : FALLBACK_BASE;
+        } catch (IllegalArgumentException e) {
+            // A language with no region, such as "en", names no currency.
+            return FALLBACK_BASE;
+        }
+    }
+
+    /**
+     * Schema 4: a base currency for the data, every account in a currency,
+     * exchange rates, and each transaction's amount in the base currency with
+     * the rate used. Everything so far is in the base currency, at a rate of 1.
+     */
+    private void addCurrencies(String base) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE currencies (
+                        code   TEXT PRIMARY KEY,
+                        name   TEXT NOT NULL,
+                        digits INTEGER NOT NULL CHECK (digits BETWEEN 0 AND 4)
+                    )""");
+            // One unit of the currency is worth rate units of the base, from
+            // effective_on until the next rate. Rates are exact decimals, as text.
+            statement.execute("""
+                    CREATE TABLE exchange_rates (
+                        currency     TEXT NOT NULL,
+                        effective_on TEXT NOT NULL,
+                        rate         TEXT NOT NULL,
+                        PRIMARY KEY (currency, effective_on)
+                    )""");
+            statement.execute("ALTER TABLE transactions ADD COLUMN rate TEXT NOT NULL DEFAULT '1'");
+            statement.execute("ALTER TABLE transactions ADD COLUMN base_amount_cents INTEGER NOT NULL DEFAULT 0");
+            statement.execute("UPDATE transactions SET base_amount_cents = amount_cents");
+        }
+        try (PreparedStatement accounts = connection.prepareStatement(
+                "UPDATE accounts SET currency = ? WHERE currency = ''");
+                PreparedStatement meta = connection.prepareStatement(
+                        "INSERT INTO meta(key, value) VALUES ('base_currency', ?)")) {
+            accounts.setString(1, base);
+            accounts.executeUpdate();
+            meta.setString(1, base);
+            meta.executeUpdate();
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE meta SET value = '4' WHERE key = 'schema'");
+            statement.execute("PRAGMA user_version = 4");
         }
     }
 

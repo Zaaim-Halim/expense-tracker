@@ -69,9 +69,10 @@ final class Cli {
             // expenses= and total= mean what they always meant, expenses only,
             // so scripts reading them keep working.
             out.println("expenses=" + countAndTotal[0]);
-            out.println("total=" + Money.format(countAndTotal[1], Locale.ROOT));
+            out.println("total=" + Money.format(countAndTotal[1], ledger.baseCurrency().digits(), Locale.ROOT));
             out.println("transactions=" + ledger.transactionCount());
             out.println("accounts=" + ledger.allAccounts().size());
+            out.println("base.currency=" + ledger.baseCurrency().code());
         }
         return 0;
     }
@@ -96,11 +97,13 @@ final class Cli {
         try (Database database = Database.open(paths.database())) {
             LedgerService service = new LedgerService(database);
             Category category = service.categoryNamed(options.arguments().get(2));
-            long cents = Money.parseCents(options.arguments().get(1));
-            Transaction saved = service.save(Transaction.expense(service.defaultAccount(), cents, category,
+            var account = service.defaultAccount();
+            int digits = service.currency(account.currency()).digits();
+            long cents = Money.parse(options.arguments().get(1), digits);
+            Transaction saved = service.save(Transaction.expense(account, cents, category,
                     options.arguments().get(0), LocalDate.now(), "", java.util.List.of()));
             out.println("added " + saved.id() + ": " + saved.description() + " "
-                    + Money.format(saved.amountCents(), Locale.ROOT) + " (" + category.name() + ")");
+                    + Money.format(saved.amountCents(), digits, Locale.ROOT) + " (" + category.name() + ")");
         }
         return 0;
     }

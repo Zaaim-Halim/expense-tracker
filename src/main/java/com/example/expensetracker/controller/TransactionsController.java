@@ -61,6 +61,7 @@ public final class TransactionsController implements Page {
     private final DatePicker to = new DatePicker();
     private final TextField minAmount = new TextField();
     private final TextField maxAmount = new TextField();
+    private final Label amountLabel = filterLabel("Amount");
     private final ToggleButton moreFilters = new ToggleButton("Filters");
     private final Button clearFilters = new Button("Clear");
     private final Label filterError = new Label();
@@ -154,16 +155,17 @@ public final class TransactionsController implements Page {
     /** Money out with a minus, money in with a plus, a transfer as it is. */
     private static Node amountOf(Transaction t) {
         Label amount = new Label(switch (t.type()) {
-            case EXPENSE -> "−" + Ui.money(t.amountCents());
-            case INCOME -> "+" + Ui.money(t.amountCents());
-            case TRANSFER -> Ui.money(t.amountCents());
+            case EXPENSE -> "−" + Ui.money(t.amountCents(), t.account().currency());
+            case INCOME -> "+" + Ui.money(t.amountCents(), t.account().currency());
+            case TRANSFER -> Ui.money(t.amountCents(), t.account().currency());
         });
         amount.getStyleClass().add("amount-" + t.type().key());
         return amount;
     }
 
+    /** What sorting by amount compares: the amount in the base currency, money out below zero. */
     private static long signed(Transaction t) {
-        return t.type() == Transaction.Type.EXPENSE ? -t.amountCents() : t.amountCents();
+        return t.type() == Transaction.Type.EXPENSE ? -t.baseAmountCents() : t.baseAmountCents();
     }
 
     /**
@@ -224,7 +226,7 @@ public final class TransactionsController implements Page {
         maxAmount.setPrefWidth(90);
         filterError.getStyleClass().add("filter-error");
         HBox second = new HBox(10, category, tag, filterLabel("Date"), from, filterLabel("to"), to,
-                filterLabel("Amount"), minAmount, filterLabel("to"), maxAmount, filterError);
+                amountLabel, minAmount, filterLabel("to"), maxAmount, filterError);
         second.setAlignment(Pos.CENTER_LEFT);
         second.visibleProperty().bind(moreFilters.selectedProperty());
         second.managedProperty().bind(second.visibleProperty());
@@ -289,7 +291,8 @@ public final class TransactionsController implements Page {
             return null;
         }
         try {
-            return Money.parseCents(text);
+            // Compared with each transaction's amount in the base currency.
+            return Money.parse(text, Ui.baseCurrency().digits());
         } catch (IllegalArgumentException e) {
             filterError.setText(e.getMessage());
             return null;
@@ -348,6 +351,7 @@ public final class TransactionsController implements Page {
             return;
         }
         refillChoices(accounts, categories, tags);
+        amountLabel.setText("Amount in " + Ui.baseCurrency().code());
         table.setItems(FXCollections.observableArrayList(shown));
         clearFilters.setDisable(!filter.isActive());
         if (filter.categoryId() != 0 || (filter.tag() != null && !filter.tag().isBlank()) || filter.from() != null
@@ -355,10 +359,11 @@ public final class TransactionsController implements Page {
             moreFilters.setSelected(true);
         }
 
+        // In the base currency: amounts in different currencies are only added once converted.
         long spent = shown.stream().filter(t -> t.type() == Transaction.Type.EXPENSE)
-                .mapToLong(Transaction::amountCents).sum();
+                .mapToLong(Transaction::baseAmountCents).sum();
         long received = shown.stream().filter(t -> t.type() == Transaction.Type.INCOME)
-                .mapToLong(Transaction::amountCents).sum();
+                .mapToLong(Transaction::baseAmountCents).sum();
         String count = filter.isActive() ? shown.size() + " of " + total : String.valueOf(total);
         summaryLabel.setText(total == 0 ? "Nothing recorded yet"
                 : count + (total == 1 ? " transaction" : " transactions") + " · " + Ui.money(spent) + " spent · "
@@ -426,7 +431,7 @@ public final class TransactionsController implements Page {
             return;
         }
         if (!Ui.confirm(window(), "Delete this transaction?",
-                transaction.description() + ", " + Ui.money(transaction.amountCents()) + " on "
+                transaction.description() + ", " + Ui.money(transaction.amountCents(), transaction.account().currency()) + " on "
                         + Ui.date(transaction.date()) + ".\nThis cannot be undone.", "Delete")) {
             return;
         }

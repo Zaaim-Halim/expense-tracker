@@ -166,9 +166,9 @@ public final class DashboardController implements Page {
         HBox.setHgrow(text, Priority.ALWAYS);
 
         Label amount = new Label(switch (t.type()) {
-            case EXPENSE -> "−" + Ui.money(t.amountCents());
-            case INCOME -> "+" + Ui.money(t.amountCents());
-            case TRANSFER -> Ui.money(t.amountCents());
+            case EXPENSE -> "−" + Ui.money(t.amountCents(), t.account().currency());
+            case INCOME -> "+" + Ui.money(t.amountCents(), t.account().currency());
+            case TRANSFER -> Ui.money(t.amountCents(), t.account().currency());
         });
         amount.getStyleClass().addAll("row-amount", "amount-" + t.type().key());
 

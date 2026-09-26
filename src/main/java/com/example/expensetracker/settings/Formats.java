@@ -55,7 +55,12 @@ public final class Formats {
      * "123 456,78" read as "123456,78".
      */
     public String money(long cents) {
-        return Money.format(cents, numberLocale()).replace('\u202F', '\u00A0');
+        return money(cents, 2);
+    }
+
+    /** An amount of minor units in a currency with {@code digits} decimals. */
+    public String money(long minor, int digits) {
+        return Money.format(minor, digits, numberLocale()).replace('\u202F', '\u00A0');
     }
 
     /** The locale whose separators amounts are written with. */

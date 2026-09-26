@@ -401,7 +401,7 @@ public final class SettingsController implements Page {
     }
 
     /** One setting: what it is and what it does on the left, the control on the right. */
-    private static HBox row(String title, String description, Node control) {
+    static HBox row(String title, String description, Node control) {
         Label name = new Label(title);
         name.getStyleClass().add("setting-title");
         Label hint = new Label(description);

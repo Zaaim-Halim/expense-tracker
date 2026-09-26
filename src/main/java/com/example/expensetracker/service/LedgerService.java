@@ -3,16 +3,27 @@ package com.example.expensetracker.service;
 import com.example.expensetracker.model.Account;
 import com.example.expensetracker.model.Category;
 import com.example.expensetracker.model.CategoryTotal;
+import com.example.expensetracker.model.CurrencyUnit;
+import com.example.expensetracker.model.ExchangeRate;
 import com.example.expensetracker.model.Transaction;
 import com.example.expensetracker.repository.AccountRepository;
 import com.example.expensetracker.repository.CategoryRepository;
+import com.example.expensetracker.repository.CurrencyRepository;
 import com.example.expensetracker.repository.Database;
 import com.example.expensetracker.repository.TransactionRepository;
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Currency;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -34,16 +45,22 @@ public final class LedgerService {
     public static final int MAX_TAGS = 10;
     public static final int MAX_TAG_NAME = 30;
 
+    public static final int MAX_CURRENCY_NAME = 40;
+
     private static final Pattern COLOR = Pattern.compile("#[0-9a-fA-F]{6}");
+    /** A custom currency's code: three to five capital letters, like ISO's own. */
+    private static final Pattern CUSTOM_CODE = Pattern.compile("[A-Z]{3,5}");
 
     private final TransactionRepository transactions;
     private final AccountRepository accounts;
     private final CategoryRepository categories;
+    private final CurrencyRepository currencies;
 
     public LedgerService(Database database) {
         this.transactions = new TransactionRepository(database);
         this.accounts = new AccountRepository(database);
         this.categories = new CategoryRepository(database);
+        this.currencies = new CurrencyRepository(database);
     }
 
     // --- transactions ---------------------------------------------------------
@@ -76,9 +93,20 @@ public final class LedgerService {
         return valid;
     }
 
-    /** A copy of {@code transaction}, dated today, saved as a new one. */
+    /**
+     * A copy of {@code transaction}, dated today, saved as a new one: at
+     * today's rate, or at the original's when there is no rate for today.
+     */
     public Transaction duplicate(Transaction transaction) throws SQLException {
-        return save(transaction.duplicate(LocalDate.now()));
+        Transaction copy = transaction.duplicate(LocalDate.now());
+        String code = transaction.account().currency();
+        if (!code.equals(baseCurrency().code()) && currencies.rateOn(code, copy.date()).isEmpty()
+                && transaction.conversion() != null) {
+            copy = new Transaction(0, copy.type(), copy.account(), copy.amountCents(), copy.toAccount(),
+                    copy.toAmountCents(), copy.category(), copy.merchant(), copy.description(), copy.date(),
+                    copy.note(), copy.tags(), transaction.conversion());
+        }
+        return save(copy);
     }
 
     public void deleteTransaction(long id) throws SQLException {
@@ -122,11 +150,15 @@ public final class LedgerService {
         if (merchant.length() > MAX_MERCHANT) {
             throw new IllegalArgumentException("Keep the merchant under " + MAX_MERCHANT + " characters");
         }
-        if (t.amountCents() <= 0 || t.amountCents() > Money.MAX_CENTS) {
-            throw new IllegalArgumentException("The amount must be more than zero");
-        }
         if (t.account() == null || t.account().id() == 0) {
             throw new IllegalArgumentException("Choose an account");
+        }
+        CurrencyUnit currency = currency(t.account().currency());
+        if (t.amountCents() <= 0) {
+            throw new IllegalArgumentException("The amount must be more than zero");
+        }
+        if (t.amountCents() > largest(currency)) {
+            throw new IllegalArgumentException("That amount is too large");
         }
         if (t.date() == null) {
             throw new IllegalArgumentException("Choose a date");
@@ -155,9 +187,21 @@ public final class LedgerService {
                 throw new IllegalArgumentException("A transfer goes to another account");
             }
             to = t.toAccount();
-            // One currency for every account until currencies can be chosen:
-            // what leaves is what arrives.
-            toAmount = t.toAmountCents() > 0 ? t.toAmountCents() : t.amountCents();
+            if (to.currency().equals(t.account().currency())) {
+                // One currency at both ends: what leaves is what arrives.
+                toAmount = t.toAmountCents() > 0 ? t.toAmountCents() : t.amountCents();
+            } else {
+                // Between currencies, what arrived is what the bank says it
+                // was; it is never guessed from a rate.
+                if (t.toAmountCents() <= 0) {
+                    throw new IllegalArgumentException("Enter the amount that arrived in " + to.name()
+                            + ", in " + to.currency());
+                }
+                if (t.toAmountCents() > largest(currency(to.currency()))) {
+                    throw new IllegalArgumentException("That amount is too large");
+                }
+                toAmount = t.toAmountCents();
+            }
         } else {
             if (t.category() == null || t.category().id() == 0) {
                 throw new IllegalArgumentException("Choose a category");
@@ -171,7 +215,37 @@ public final class LedgerService {
             category = t.category();
         }
         return new Transaction(t.id(), t.type(), t.account(), t.amountCents(), to, toAmount, category,
-                merchant, description, t.date(), note, t.tags());
+                merchant, description, t.date(), note, t.tags(), conversion(t, currency));
+    }
+
+    /**
+     * What a transaction is in the base currency. In the base currency, the
+     * amount itself; otherwise at the rate given with it (typed by the user),
+     * or else the rate in effect on its day.
+     */
+    private Transaction.Conversion conversion(Transaction t, CurrencyUnit currency) throws SQLException {
+        CurrencyUnit base = baseCurrency();
+        if (currency.code().equals(base.code())) {
+            return new Transaction.Conversion(BigDecimal.ONE, t.amountCents());
+        }
+        BigDecimal rate;
+        if (t.conversion() != null && t.conversion().rate() != null) {
+            rate = t.conversion().rate();
+            if (rate.signum() <= 0) {
+                throw new IllegalArgumentException("The rate must be more than zero");
+            }
+        } else {
+            rate = currencies.rateOn(currency.code(), t.date()).map(ExchangeRate::rate).orElseThrow(() ->
+                    new IllegalArgumentException("There is no rate for " + currency.code() + " on or before "
+                            + t.date() + ". Add one under Currencies, or type the rate."));
+        }
+        return new Transaction.Conversion(rate,
+                Money.convert(t.amountCents(), currency.digits(), rate, base.digits()));
+    }
+
+    /** The largest amount accepted in a currency, in its minor units. */
+    private static long largest(CurrencyUnit currency) {
+        return BigDecimal.valueOf(Money.MAX_UNITS).movePointRight(currency.digits()).longValueExact();
     }
 
     // --- accounts -------------------------------------------------------------
@@ -209,14 +283,25 @@ public final class LedgerService {
         if (account.kind() == null) {
             throw new IllegalArgumentException("Choose what kind of account it is");
         }
-        if (Math.abs(account.openingCents()) > Money.MAX_CENTS) {
+        String code = account.currency().isBlank() ? baseCurrency().code() : account.currency();
+        CurrencyUnit currency = currency(code);
+        if (Math.abs(account.openingCents()) > largest(currency)) {
             throw new IllegalArgumentException("That opening balance is too large");
+        }
+        if (account.id() != 0) {
+            // Its transactions were recorded in its currency; relabelling
+            // them would change every amount's meaning.
+            Account stored = accounts.findAll().stream().filter(a -> a.id() == account.id()).findFirst().orElse(null);
+            if (stored != null && !stored.currency().equals(code) && accounts.usage(account.id()) > 0) {
+                throw new IllegalArgumentException("\"" + stored.name() + "\" has transactions, so it stays in "
+                        + stored.currency());
+            }
         }
         var existing = accounts.findByName(name);
         if (existing.isPresent() && existing.get().id() != account.id()) {
             throw new IllegalArgumentException("There is already an account called \"" + name + "\"");
         }
-        Account valid = new Account(account.id(), name, account.kind(), account.currency(), account.openingCents());
+        Account valid = new Account(account.id(), name, account.kind(), code, account.openingCents());
         if (valid.id() == 0) {
             return accounts.insert(valid);
         }
@@ -312,5 +397,223 @@ public final class LedgerService {
     /** How many transactions a category holds. */
     public int usage(Category category) throws SQLException {
         return categories.usage(category.id());
+    }
+
+    // --- currencies -----------------------------------------------------------
+
+    /** The currency every total is in. */
+    public CurrencyUnit baseCurrency() throws SQLException {
+        return currency(currencies.baseCode());
+    }
+
+    /**
+     * A currency by code: one the user defined, or an ISO 4217 one.
+     *
+     * @throws IllegalArgumentException when there is no such currency
+     */
+    public CurrencyUnit currency(String code) throws SQLException {
+        String wanted = code == null ? "" : code.strip().toUpperCase(java.util.Locale.ROOT);
+        for (CurrencyUnit custom : currencies.customCurrencies()) {
+            if (custom.code().equals(wanted)) {
+                return custom;
+            }
+        }
+        return CurrencyUnit.iso(wanted).orElseThrow(() ->
+                new IllegalArgumentException("There is no currency " + wanted));
+    }
+
+    /** Every currency that can be chosen: ISO 4217's, then the user's own, by code. */
+    public List<CurrencyUnit> allCurrencies() throws SQLException {
+        TreeSet<String> codes = new TreeSet<>();
+        for (Currency iso : Currency.getAvailableCurrencies()) {
+            codes.add(iso.getCurrencyCode());
+        }
+        List<CurrencyUnit> all = new ArrayList<>();
+        for (String code : codes) {
+            CurrencyUnit.iso(code).ifPresent(all::add);
+        }
+        all.addAll(currencies.customCurrencies());
+        all.sort(Comparator.comparing(CurrencyUnit::code));
+        return all;
+    }
+
+    public List<CurrencyUnit> customCurrencies() throws SQLException {
+        return currencies.customCurrencies();
+    }
+
+    /**
+     * Makes another currency the base. Only while nothing depends on the old
+     * one: every account in it, and no rates, which are all worth something
+     * in the old base. Then it is a new name, and nothing is converted.
+     */
+    public void changeBaseCurrency(String code) throws SQLException {
+        CurrencyUnit next = currency(code);
+        CurrencyUnit base = baseCurrency();
+        if (next.code().equals(base.code())) {
+            return;
+        }
+        int inBase = currencies.accountsIn(base.code());
+        if (inBase != accounts.findAll().size()) {
+            throw new IllegalArgumentException("Some accounts are in other currencies, so the base currency stays "
+                    + base.code());
+        }
+        if (currencies.rateCount() > 0) {
+            throw new IllegalArgumentException("Every rate is in " + base.code()
+                    + ", so the base currency stays " + base.code() + " while there are rates");
+        }
+        // Amounts are whole minor units: a cent is not a yen. With other
+        // decimals, every amount already stored would change its meaning.
+        if (next.digits() != base.digits()
+                && (transactions.count() > 0 || accounts.findAll().stream().anyMatch(a -> a.openingCents() != 0))) {
+            throw new IllegalArgumentException(next.code() + " has " + next.digits() + " decimals and " + base.code()
+                    + " has " + base.digits() + ", so the amounts already recorded would change");
+        }
+        currencies.changeBase(next.code());
+    }
+
+    /** Adds a currency of the user's own, or changes one no account uses yet. */
+    public CurrencyUnit saveCustomCurrency(CurrencyUnit currency) throws SQLException {
+        String code = currency.code() == null ? "" : currency.code().strip().toUpperCase(java.util.Locale.ROOT);
+        if (!CUSTOM_CODE.matcher(code).matches()) {
+            throw new IllegalArgumentException("A code is three to five letters, such as BTC");
+        }
+        if (CurrencyUnit.iso(code).isPresent()) {
+            throw new IllegalArgumentException(code + " is already a currency");
+        }
+        String name = currency.name() == null ? "" : currency.name().strip();
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("Name the currency");
+        }
+        if (name.length() > MAX_CURRENCY_NAME) {
+            throw new IllegalArgumentException("Keep the name under " + MAX_CURRENCY_NAME + " characters");
+        }
+        if (currency.digits() < 0 || currency.digits() > 4) {
+            throw new IllegalArgumentException("A currency has from 0 to 4 decimals");
+        }
+        Optional<CurrencyUnit> existing = currencies.customCurrencies().stream()
+                .filter(c -> c.code().equals(code)).findFirst();
+        if (existing.isPresent() && existing.get().digits() != currency.digits() && currencies.accountsIn(code) > 0) {
+            throw new IllegalArgumentException(code + " is in use, so it keeps " + existing.get().digits() + " decimals");
+        }
+        CurrencyUnit valid = new CurrencyUnit(code, name, currency.digits(), true);
+        currencies.saveCustom(valid);
+        return valid;
+    }
+
+    /** Removes a currency of the user's own that no account is in. */
+    public void deleteCustomCurrency(CurrencyUnit currency) throws SQLException {
+        int used = currencies.accountsIn(currency.code());
+        if (used > 0) {
+            throw new IllegalArgumentException(currency.code() + " is the currency of " + used
+                    + (used == 1 ? " account" : " accounts"));
+        }
+        currencies.deleteCustom(currency.code());
+    }
+
+    /** Every rate, by currency and then newest first. */
+    public List<ExchangeRate> rates() throws SQLException {
+        return currencies.rates();
+    }
+
+    /** The rate in effect for {@code code} on {@code day}, if there is one. */
+    public Optional<ExchangeRate> rateOn(String code, LocalDate day) throws SQLException {
+        return currencies.rateOn(code, day);
+    }
+
+    /**
+     * Adds a rate, or replaces the one for the same currency and day. Rates
+     * saved later never change transactions already recorded: each keeps the
+     * rate it was saved with.
+     */
+    public ExchangeRate saveRate(ExchangeRate rate) throws SQLException {
+        CurrencyUnit currency = currency(rate.currency());
+        if (currency.code().equals(baseCurrency().code())) {
+            throw new IllegalArgumentException(currency.code() + " is the base currency: its rate is always 1");
+        }
+        if (rate.effectiveOn() == null) {
+            throw new IllegalArgumentException("Choose the day the rate applies from");
+        }
+        if (rate.rate() == null || rate.rate().signum() <= 0) {
+            throw new IllegalArgumentException("The rate must be more than zero");
+        }
+        if (rate.rate().stripTrailingZeros().scale() > Money.RATE_SCALE) {
+            throw new IllegalArgumentException("Use at most " + Money.RATE_SCALE + " decimals in a rate");
+        }
+        ExchangeRate valid = new ExchangeRate(currency.code(), rate.effectiveOn(), rate.rate().stripTrailingZeros());
+        currencies.saveRate(valid);
+        return valid;
+    }
+
+    public void deleteRate(ExchangeRate rate) throws SQLException {
+        currencies.deleteRate(rate);
+    }
+
+    /**
+     * Converts an amount between any two currencies, through the base, at the
+     * rates in effect on {@code day}.
+     *
+     * @throws IllegalArgumentException when either currency has no rate then
+     */
+    public long convert(long minor, String from, String to, LocalDate day) throws SQLException {
+        CurrencyUnit source = currency(from);
+        CurrencyUnit target = currency(to);
+        BigDecimal value = BigDecimal.valueOf(minor, source.digits()).multiply(rateToBase(source, day))
+                .divide(rateToBase(target, day), MathContext.DECIMAL128);
+        return value.setScale(target.digits(), RoundingMode.HALF_EVEN).unscaledValue().longValueExact();
+    }
+
+    private BigDecimal rateToBase(CurrencyUnit currency, LocalDate day) throws SQLException {
+        if (currency.code().equals(baseCurrency().code())) {
+            return BigDecimal.ONE;
+        }
+        return currencies.rateOn(currency.code(), day).map(ExchangeRate::rate).orElseThrow(() ->
+                new IllegalArgumentException("There is no rate for " + currency.code() + " on or before " + day));
+    }
+
+    /**
+     * What is held, what is owed, and the difference, in the base currency,
+     * at today's rates. An account in a currency with no rate yet cannot be
+     * counted; its currency is named instead of guessed.
+     *
+     * @param haveCents   the balances above zero, added up
+     * @param oweCents    the balances below zero, as a positive amount
+     * @param uncounted   currencies left out for want of a rate
+     */
+    public record NetWorth(long haveCents, long oweCents, List<String> uncounted) {
+        public long netCents() {
+            return haveCents - oweCents;
+        }
+    }
+
+    public NetWorth netWorth(LocalDate day) throws SQLException {
+        Map<Long, Long> balances = accounts.balances();
+        CurrencyUnit base = baseCurrency();
+        long have = 0;
+        long owe = 0;
+        TreeSet<String> uncounted = new TreeSet<>();
+        for (Account account : accounts.findAll()) {
+            long balance = balances.getOrDefault(account.id(), 0L);
+            long inBase;
+            if (balance == 0) {
+                // Nothing in any currency: no rate is needed to know that.
+                continue;
+            }
+            if (account.currency().equals(base.code())) {
+                inBase = balance;
+            } else {
+                Optional<ExchangeRate> rate = currencies.rateOn(account.currency(), day);
+                if (rate.isEmpty()) {
+                    uncounted.add(account.currency());
+                    continue;
+                }
+                inBase = Money.convert(balance, currency(account.currency()).digits(), rate.get().rate(), base.digits());
+            }
+            if (inBase >= 0) {
+                have += inBase;
+            } else {
+                owe -= inBase;
+            }
+        }
+        return new NetWorth(have, owe, List.copyOf(uncounted));
     }
 }

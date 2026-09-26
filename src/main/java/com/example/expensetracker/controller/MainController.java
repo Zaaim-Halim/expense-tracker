@@ -26,6 +26,7 @@ public final class MainController {
         TRANSACTIONS("/fxml/transactions.fxml"),
         ACCOUNTS("/fxml/accounts.fxml"),
         CATEGORIES("/fxml/categories.fxml"),
+        CURRENCIES("/fxml/currencies.fxml"),
         SETTINGS("/fxml/settings.fxml");
 
         final String fxml;
@@ -40,6 +41,7 @@ public final class MainController {
     @FXML private ToggleButton transactionsNav;
     @FXML private ToggleButton accountsNav;
     @FXML private ToggleButton categoriesNav;
+    @FXML private ToggleButton currenciesNav;
     @FXML private ToggleButton settingsNav;
     @FXML private Label brandIcon;
     @FXML private Label versionLabel;
@@ -56,11 +58,13 @@ public final class MainController {
         transactionsNav.setGraphic(Icons.of(Icons.LIST));
         accountsNav.setGraphic(Icons.of(Icons.WALLET));
         categoriesNav.setGraphic(Icons.of(Icons.TAG));
+        currenciesNav.setGraphic(Icons.of(Icons.CURRENCY_EXCHANGE));
         settingsNav.setGraphic(Icons.of(Icons.SETTINGS));
         dashboardNav.setTooltip(new Tooltip(Shortcuts.hint("Dashboard", Shortcuts.DASHBOARD)));
         transactionsNav.setTooltip(new Tooltip(Shortcuts.hint("Transactions", Shortcuts.TRANSACTIONS)));
         accountsNav.setTooltip(new Tooltip(Shortcuts.hint("Accounts", Shortcuts.ACCOUNTS)));
         categoriesNav.setTooltip(new Tooltip(Shortcuts.hint("Categories", Shortcuts.CATEGORIES)));
+        currenciesNav.setTooltip(new Tooltip(Shortcuts.hint("Currencies", Shortcuts.CURRENCIES)));
         settingsNav.setTooltip(new Tooltip(Shortcuts.hint("Settings", Shortcuts.SETTINGS)));
         javafx.scene.image.ImageView logo = new javafx.scene.image.ImageView(
                 ExpenseTrackerApp.resource("/icons/brand.png").toExternalForm());
@@ -69,7 +73,7 @@ public final class MainController {
         logo.setSmooth(true);
         brandIcon.setGraphic(logo);
         for (ToggleButton button : new ToggleButton[] {dashboardNav, transactionsNav, accountsNav, categoriesNav,
-            settingsNav}) {
+            currenciesNav, settingsNav}) {
             button.setToggleGroup(navigation);
         }
         // A section stays selected: clicking the current one again is not "none".
@@ -85,6 +89,7 @@ public final class MainController {
 
     public void setup(LedgerService ledger) {
         this.service = ledger;
+        Ui.useCurrencies(ledger);
         navigation.selectToggle(dashboardNav);
         // A changed setting shows at once: the theme on the window, and dates
         // and amounts on the page in front of the user. Other pages redraw
@@ -103,6 +108,7 @@ public final class MainController {
      */
     public void replaceService(LedgerService replacement) {
         this.service = replacement;
+        Ui.useCurrencies(replacement);
         roots.clear();
         pages.clear();
         Section current = shown == null ? Section.DASHBOARD : shown;
@@ -120,6 +126,7 @@ public final class MainController {
         scene.getAccelerators().put(Shortcuts.TRANSACTIONS, () -> select(Section.TRANSACTIONS));
         scene.getAccelerators().put(Shortcuts.ACCOUNTS, () -> select(Section.ACCOUNTS));
         scene.getAccelerators().put(Shortcuts.CATEGORIES, () -> select(Section.CATEGORIES));
+        scene.getAccelerators().put(Shortcuts.CURRENCIES, () -> select(Section.CURRENCIES));
         scene.getAccelerators().put(Shortcuts.SETTINGS, () -> select(Section.SETTINGS));
         scene.getAccelerators().put(Shortcuts.FIND, () -> {
             select(Section.TRANSACTIONS);
@@ -141,6 +148,7 @@ public final class MainController {
             case TRANSACTIONS -> transactionsNav;
             case ACCOUNTS -> accountsNav;
             case CATEGORIES -> categoriesNav;
+            case CURRENCIES -> currenciesNav;
             case SETTINGS -> settingsNav;
         });
     }
@@ -151,6 +159,9 @@ public final class MainController {
         }
         if (toggle == accountsNav) {
             return Section.ACCOUNTS;
+        }
+        if (toggle == currenciesNav) {
+            return Section.CURRENCIES;
         }
         if (toggle == settingsNav) {
             return Section.SETTINGS;
@@ -186,6 +197,7 @@ public final class MainController {
 
     /** Something was saved or deleted: the page on screen shows it at once. */
     private void dataChanged() {
+        Ui.useCurrencies(service);
         if (shown != null) {
             pages.get(shown).refresh();
         }

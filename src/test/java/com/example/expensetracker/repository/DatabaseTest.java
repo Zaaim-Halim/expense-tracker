@@ -244,4 +244,76 @@ class DatabaseTest {
             assertEquals(List.of("Work"), expenses.allTags(), "an unused tag stayed");
         }
     }
+
+    /** A database exactly as the released 2.0.0 wrote it: schema 3, with accounts, income, transfers and tags. */
+    static Path schemaThreeFile(Path dir) throws Exception {
+        Path file = dir.resolve("expenses.db");
+        try (java.io.InputStream in = DatabaseTest.class.getResourceAsStream("/schema-3.db")) {
+            Files.copy(in, file);
+        }
+        return file;
+    }
+
+    @Test
+    void a_schema_three_file_gets_currencies_with_every_amount_kept_at_a_rate_of_one() throws Exception {
+        Path file = schemaThreeFile(dir);
+        long[] before;
+        try (Connection old = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            before = new long[] {count(old, "SELECT COUNT(*) FROM transactions"),
+                count(old, "SELECT SUM(amount_cents) FROM transactions"),
+                count(old, "SELECT COUNT(*) FROM transaction_tags")};
+        }
+        try (Database database = Database.open(file)) {
+            assertEquals(4, database.schemaVersion());
+            String base = new CurrencyRepository(database).baseCode();
+            List<Transaction> all = new TransactionRepository(database).findAll();
+            assertEquals(before[0], all.size());
+            assertEquals(before[1], all.stream().mapToLong(Transaction::amountCents).sum());
+            assertTrue(all.stream().allMatch(t -> t.baseAmountCents() == t.amountCents()
+                    && t.conversion().rate().compareTo(java.math.BigDecimal.ONE) == 0));
+            assertTrue(all.stream().allMatch(t -> t.account().currency().equals(base)
+                    && (t.toAccount() == null || t.toAccount().currency().equals(base))), "every account in the base");
+            assertEquals(List.of("gift", "sport"), all.stream().filter(t -> t.description().equals("Shoes"))
+                    .findFirst().orElseThrow().tags());
+            var balances = new AccountRepository(database).balances();
+            assertEquals(175_750L, balances.get(1L), "balances are unchanged");
+            assertEquals(-11_999L, balances.get(2L));
+            assertEquals(140_000L, balances.get(3L));
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(before[2], count(after, "SELECT COUNT(*) FROM transaction_tags"));
+            assertEquals(4, count(after, "PRAGMA user_version"),
+                    "2.0.0 now refuses the file rather than adding transactions no total counts");
+        }
+        assertTrue(Files.exists(dir.resolve("expenses.db.schema-3.bak")), "no backup was made");
+    }
+
+    @Test
+    void an_upgrade_from_schema_three_that_fails_leaves_the_file_exactly_as_it_was() throws Exception {
+        // A file that already names a base currency: the upgrade's own insert
+        // of one fails, after the tables and columns were already added.
+        Path file = schemaThreeFile(dir);
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+                Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO meta(key, value) VALUES ('base_currency', 'XYZ')");
+        }
+        byte[] before = Files.readAllBytes(file);
+        assertThrows(SQLException.class, () -> Database.open(file).close());
+        assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(file)), "the file was changed");
+    }
+
+    @Test
+    void the_base_currency_is_the_regions_or_else_the_euro() {
+        java.util.Locale was = java.util.Locale.getDefault(java.util.Locale.Category.FORMAT);
+        try {
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.JAPAN);
+            assertEquals("JPY", Database.defaultBase());
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.ENGLISH);
+            assertEquals(Database.FALLBACK_BASE, Database.defaultBase(), "a language with no region");
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.forLanguageTag("en-AQ"));
+            assertEquals(Database.FALLBACK_BASE, Database.defaultBase(), "a region with no currency");
+        } finally {
+            java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, was);
+        }
+    }
 }

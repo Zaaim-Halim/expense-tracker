@@ -53,10 +53,10 @@ public record TransactionFilter(String text, Transaction.Type type, long account
         if (to != null && t.date().isAfter(to)) {
             return false;
         }
-        if (minCents != null && t.amountCents() < minCents) {
+        if (minCents != null && t.baseAmountCents() < minCents) {
             return false;
         }
-        if (maxCents != null && t.amountCents() > maxCents) {
+        if (maxCents != null && t.baseAmountCents() > maxCents) {
             return false;
         }
         if (tag != null && !tag.isBlank() && t.tags().stream().noneMatch(x -> fold(x).equals(fold(tag)))) {

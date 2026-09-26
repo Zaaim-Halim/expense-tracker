@@ -73,6 +73,7 @@ public final class Render {
         try (Database empty = Database.open(scratch.resolve("empty.db"));
                 Database filled = Database.open(scratch.resolve("sample.db"))) {
             LedgerService emptyService = new LedgerService(empty);
+            emptyService.changeBaseCurrency("EUR");
             LedgerService service = new LedgerService(filled);
             seed(service);
             // Backups of the sample data, for the Data section of Settings.
@@ -119,6 +120,14 @@ public final class Render {
             dialog(AccountDialog.create(stage, service, null), directory.resolve("dialog-new-account.png"));
             dialog(AccountDialog.create(stage, service, service.accountNamed("Visa")),
                     directory.resolve("dialog-edit-card.png"));
+            dialog(TransactionDialog.create(stage, service, all.stream()
+                    .filter(t -> t.account().currency().equals("USD")).findFirst().orElseThrow()),
+                    directory.resolve("dialog-edit-foreign.png"));
+            dialog(TransactionDialog.create(stage, service, all.stream()
+                    .filter(t -> t.toAccount() != null && t.toAccount().currency().equals("USD")).findFirst()
+                    .orElseThrow()), directory.resolve("dialog-edit-transfer-currencies.png"));
+            dialog(RateDialog.create(stage, service, null), directory.resolve("dialog-new-rate.png"));
+            dialog(CurrencyDialog.create(stage, service), directory.resolve("dialog-new-currency.png"));
 
             // Dark, with another accent and other formats: every page again,
             // and a dialog, which is themed separately from the window.
@@ -134,6 +143,10 @@ public final class Render {
             dialog(AccountDialog.create(stage, service, service.accountNamed("Visa")),
                     directory.resolve("dialog-edit-card-dark.png"));
             dialog(CategoryDialog.create(stage, service, null), directory.resolve("dialog-new-category-dark.png"));
+            dialog(TransactionDialog.create(stage, service, all.stream()
+                    .filter(t -> t.account().currency().equals("USD")).findFirst().orElseThrow()),
+                    directory.resolve("dialog-edit-foreign-dark.png"));
+            dialog(RateDialog.create(stage, service, null), directory.resolve("dialog-new-rate-dark.png"));
             Appearance.change(light.withAccent(Settings.Accent.ROSE));
             main.select(MainController.Section.DASHBOARD);
             write(scene, directory.resolve("dashboard-rose.png"));
@@ -208,6 +221,15 @@ public final class Render {
                 DatePicker date = (DatePicker) edit.getDialogPane().lookup(".date-picker");
                 popup(date::show, date::hide, directory.resolve("popup-calendar" + theme + ".png"));
                 edit.close();
+                Dialog<?> newAccount = AccountDialog.create(stage, service, null);
+                newAccount.show();
+                ComboBox<?> currency = (ComboBox<?>) newAccount.getDialogPane().lookupAll(".combo-box").stream()
+                        .filter(node -> !((ComboBox<?>) node).getItems().isEmpty()
+                                && ((ComboBox<?>) node).getItems().get(0)
+                                        instanceof com.example.expensetracker.model.CurrencyUnit)
+                        .findFirst().orElseThrow();
+                popup(currency::show, currency::hide, directory.resolve("popup-currency" + theme + ".png"));
+                newAccount.close();
                 main.select(MainController.Section.SETTINGS);
                 ComboBox<?> setting = (ComboBox<?>) scene.getRoot().lookup(".setting-row .combo-box");
                 popup(setting::show, setting::hide, directory.resolve("popup-setting" + theme + ".png"));
@@ -368,6 +390,8 @@ public final class Render {
      */
     private static void seed(LedgerService service) throws Exception {
         LocalDate today = LocalDate.now();
+        // The same pictures on every machine, whatever its region's currency.
+        service.changeBaseCurrency("EUR");
         Account bank = service.defaultAccount();
         service.save(new Account(bank.id(), "Everyday account", Account.Kind.BANK, "", 184_250));
         bank = service.defaultAccount();
@@ -409,6 +433,18 @@ public final class Render {
                 "Card payment", today, "", List.of()));
         service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, 10_000, wallet, 10_000, null, "",
                 "Cash machine", today, "", List.of()));
+
+        // A second currency: an account in dollars, its rate, and money moved to it.
+        service.saveRate(new com.example.expensetracker.model.ExchangeRate("USD", first,
+                new java.math.BigDecimal("0.92")));
+        service.saveRate(new com.example.expensetracker.model.ExchangeRate("GBP", first,
+                new java.math.BigDecimal("1.19")));
+        Account travel = service.save(new Account(0, "Travel card", Account.Kind.CREDIT_CARD, "USD", 0));
+        service.save(new Transaction(0, Transaction.Type.TRANSFER, bank, 20_000, travel, 21_700, null, "",
+                "Top up for New York", first, "", List.of("travel")));
+        service.save(Transaction.expense(travel, 4_850, service.categoryNamed("Food"), "Dinner in Brooklyn",
+                today, "", List.of("travel")));
+        service.saveCustomCurrency(new com.example.expensetracker.model.CurrencyUnit("PTS", "Air miles", 0, true));
     }
 
     private static void write(Scene scene, Path file) throws IOException {

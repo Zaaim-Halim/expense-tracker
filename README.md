@@ -33,6 +33,12 @@ application. Why it exists, what it proves so far and what comes next are in
   category, tag, a date range and an amount range.
 - **Tags:** any number of labels per transaction (travel, work, family…),
   picked from the ones already in use or typed.
+- **Currencies:** each account in its own currency (every ISO 4217 one, or
+  one of your own, such as air miles), a base currency every total is in,
+  exchange rates you enter with the day they apply from, and a converter.
+  Each transaction keeps the rate it was recorded at, so a rate changed later
+  never rewrites the past; a transfer between currencies records what
+  arrived.
 - **Categories:** for expenses or for income, a set of each to start with; add
   your own, rename, recolour. A category or an account still in use cannot be
   deleted, so no transaction is ever lost with it.
@@ -40,7 +46,7 @@ application. Why it exists, what it proves so far and what comes next are in
   how dates, amounts and the first day of the week are written. Saved as they
   change, in `settings.properties` beside the data, so updates keep them.
 - **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
-  elsewhere), listed in Settings: N for a new transaction, F to search, 1–4 for
+  elsewhere), listed in Settings: N for a new transaction, F to search, 1–5 for
   the pages, comma for Settings; Enter edits and Delete removes the selected
   row.
 - **Backups:** made automatically once a day (the latest 10 are kept) and
@@ -98,15 +104,17 @@ java.version=21.0.8
 java.home=…/io.xpack.examples.expensetracker/versions/1.0.0/runtime
 data.dir=…
 database=…/expenses.db
-schema=3
+schema=4
 xpack.application.dir=…/io.xpack.examples.expensetracker
 expenses=2
 total=15.90
 transactions=3
 accounts=1
+base.currency=EUR
 ```
 
-`expenses` and `total` count expenses only; `transactions` counts every type.
+`expenses` and `total` count expenses only, `total` in the base currency;
+`transactions` counts every type.
 
 ## Installing
 

@@ -3,6 +3,7 @@ package com.example.expensetracker.controller;
 import com.example.expensetracker.model.Account;
 import com.example.expensetracker.service.LedgerService;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import javafx.collections.FXCollections;
@@ -26,6 +27,7 @@ public final class AccountsController implements Page {
     @FXML private Label summaryLabel;
     @FXML private Button newButton;
     @FXML private Label netWorthValue;
+    @FXML private Label netWorthCaption;
     @FXML private Label assetsValue;
     @FXML private Label assetsCaption;
     @FXML private Label owedValue;
@@ -59,33 +61,33 @@ public final class AccountsController implements Page {
     @Override
     public void refresh() {
         List<Account> accounts;
+        LedgerService.NetWorth worth;
         try {
             accounts = service.allAccounts();
             balances = service.balances();
+            worth = service.netWorth(LocalDate.now());
         } catch (SQLException e) {
             Ui.error(window(), "Your accounts could not be read", e.getMessage());
             return;
         }
         list.setItems(FXCollections.observableArrayList(accounts));
-        long have = 0;
-        long owe = 0;
         int held = 0;
         int owing = 0;
         for (Account account : accounts) {
             long balance = balances.getOrDefault(account.id(), 0L);
-            if (balance >= 0) {
-                have += balance;
-                held += balance > 0 ? 1 : 0;
-            } else {
-                owe -= balance;
-                owing++;
-            }
+            held += balance > 0 ? 1 : 0;
+            owing += balance < 0 ? 1 : 0;
         }
-        long net = have - owe;
+        // Every account at today's rate, in the base currency. One whose
+        // currency has no rate yet is named rather than guessed at.
+        long net = worth.netCents();
         netWorthValue.setText(net < 0 ? "−" + Ui.money(-net) : Ui.money(net));
-        assetsValue.setText(Ui.money(have));
+        netWorthCaption.setText(worth.uncounted().isEmpty()
+                ? "what you have, minus what you owe, in " + Ui.baseCurrency().code()
+                : "without " + String.join(", ", worth.uncounted()) + ": add a rate under Currencies");
+        assetsValue.setText(Ui.money(worth.haveCents()));
         assetsCaption.setText(held == 1 ? "in 1 account" : "in " + held + " accounts");
-        owedValue.setText(Ui.money(owe));
+        owedValue.setText(Ui.money(worth.oweCents()));
         owedCaption.setText(owing == 0 ? "nothing owed" : owing == 1 ? "on 1 account" : "on " + owing + " accounts");
         summaryLabel.setText(accounts.size() + (accounts.size() == 1 ? " account" : " accounts"));
     }

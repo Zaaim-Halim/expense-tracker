@@ -80,7 +80,8 @@ public final class TransactionDialog {
 
         TextField description = new TextField(existing == null ? "" : existing.description());
         description.setPromptText("What was it? e.g. Groceries");
-        TextField amount = new TextField(existing == null ? "" : Money.plain(existing.amountCents()));
+        TextField amount = new TextField(existing == null ? ""
+                : Money.plain(existing.amountCents(), Ui.unit(existing.account().currency()).digits()));
         amount.setPromptText("0.00");
         DatePicker date = new DatePicker(existing == null ? LocalDate.now() : existing.date());
         date.setMaxWidth(Double.MAX_VALUE);
@@ -118,11 +119,37 @@ public final class TransactionDialog {
         error.setVisible(false);
         error.setManaged(false);
 
+        // In another currency than the base: the rate for the day, from the
+        // rates the user keeps, and what the amount comes to in the base.
+        TextField rate = new TextField();
+        rate.setPromptText("Rate");
+        Label rateHint = new Label();
+        rateHint.getStyleClass().add("field-hint");
+        rateHint.setWrapText(true);
+        VBox rateField = field("Rate", new VBox(6, rate, rateHint));
+        // A transfer between currencies: what arrived, as the bank says.
+        TextField arrived = new TextField(existing == null || existing.toAccount() == null
+                || existing.toAccount().currency().equals(existing.account().currency()) ? ""
+                : Money.plain(existing.toAmountCents(), Ui.unit(existing.toAccount().currency()).digits()));
+        arrived.setPromptText("0.00");
+        VBox arrivedField = field("Arrived", arrived);
+        boolean[] rateTyped = {existing != null && existing.conversion() != null};
+        if (rateTyped[0] && !existing.account().currency().equals(Ui.baseCurrency().code())) {
+            rate.setText(existing.conversion().rate().toPlainString());
+        }
+        rate.textProperty().addListener((observable, before, now) -> {
+            if (rate.isFocused()) {
+                rateTyped[0] = true;
+            }
+        });
+
         VBox accountField = field("Account", account);
         VBox toField = field("To", toAccount);
         VBox categoryField = field("Category", category);
         VBox merchantField = field("Paid to", merchant);
-        HBox amountAndDate = pair(field("Amount", amount), field("Date", date));
+        VBox amountField = field("Amount", amount);
+        HBox amountAndDate = pair(amountField, field("Date", date));
+        HBox conversionRow = pair(rateField, arrivedField);
         HBox accountAndCategory = pair(accountField, categoryField);
         HBox fromAndTo = pair(new VBox(), toField);
 
@@ -158,15 +185,76 @@ public final class TransactionDialog {
                 dialog.getDialogPane().getScene().getWindow().sizeToScene();
             }
         };
+        Runnable convert = () -> {
+            Transaction.Type chosen = (Transaction.Type) type.getSelectedToggle().getUserData();
+            Account from = account.getValue();
+            Account to = toAccount.getValue();
+            String base = Ui.baseCurrency().code();
+            String code = from == null ? base : from.currency();
+            ((Label) amountField.getChildren().get(0)).setText(code.equals(base) ? "Amount" : "Amount in " + code);
+            boolean foreign = !code.equals(base);
+            boolean across = chosen == Transaction.Type.TRANSFER && from != null && to != null
+                    && !to.currency().equals(from.currency());
+            rateField.setVisible(foreign);
+            rateField.setManaged(foreign);
+            arrivedField.setVisible(across);
+            arrivedField.setManaged(across);
+            conversionRow.setVisible(foreign || across);
+            conversionRow.setManaged(foreign || across);
+            if (across) {
+                ((Label) arrivedField.getChildren().get(0)).setText("Arrived in " + to.currency());
+            }
+            if (foreign) {
+                ((Label) rateField.getChildren().get(0)).setText("1 " + code + " in " + base);
+                if (!rateTyped[0]) {
+                    try {
+                        rate.setText(date.getValue() == null ? "" : service.rateOn(code, date.getValue())
+                                .map(r -> r.rate().toPlainString()).orElse(""));
+                    } catch (SQLException e) {
+                        rate.setText("");
+                    }
+                }
+                String shown;
+                try {
+                    long minor = Money.parse(amount.getText(), Ui.unit(code).digits());
+                    long inBase = Money.convert(minor, Ui.unit(code).digits(), Money.parseRate(rate.getText()),
+                            Ui.baseCurrency().digits());
+                    shown = "Comes to " + Ui.money(inBase, base) + " " + base + ".";
+                } catch (IllegalArgumentException e) {
+                    shown = rate.getText().isBlank() ? "No rate for " + code + " on this day yet: type it, or add one "
+                            + "under Currencies." : "Type the amount and the rate to see it in " + base + ".";
+                }
+                rateHint.setText(shown);
+            }
+            if (dialog.getDialogPane().getScene() != null) {
+                dialog.getDialogPane().getScene().getWindow().sizeToScene();
+            }
+        };
+        // A new account or day means another rate, unless the user typed one.
+        account.valueProperty().addListener((observable, before, now) -> {
+            if (before != null && now != null && !before.currency().equals(now.currency())) {
+                rateTyped[0] = false;
+            }
+            convert.run();
+        });
+        date.valueProperty().addListener((observable, before, now) -> {
+            rateTyped[0] = false;
+            convert.run();
+        });
+        toAccount.valueProperty().addListener((observable, before, now) -> convert.run());
+        amount.textProperty().addListener((observable, before, now) -> convert.run());
+        rate.textProperty().addListener((observable, before, now) -> convert.run());
         type.selectedToggleProperty().addListener((observable, before, now) -> {
             if (now == null) {
                 type.selectToggle(before);
             } else {
                 arrange.run();
+                convert.run();
             }
         });
         Transaction.Type initial = existing == null ? Transaction.Type.EXPENSE : existing.type();
         type.getToggles().stream().filter(t -> t.getUserData() == initial).findFirst().ifPresent(type::selectToggle);
+        convert.run();
         if (existing != null && existing.category() != null) {
             category.getItems().stream().filter(c -> c.id() == existing.category().id()).findFirst()
                     .ifPresent(category::setValue);
@@ -177,6 +265,7 @@ public final class TransactionDialog {
                 field("Description", description),
                 amountAndDate,
                 accountAndCategory,
+                conversionRow,
                 merchantField,
                 field("Tags", new VBox(8, tags, suggestions)),
                 field("Note", note),
@@ -198,14 +287,25 @@ public final class TransactionDialog {
         // fields rather than losing what was typed.
         saveButton.addEventFilter(ActionEvent.ACTION, event -> {
             try {
-                long cents = Money.parseCents(amount.getText());
+                Account from = account.getValue();
+                if (from == null) {
+                    throw new IllegalArgumentException("Choose an account");
+                }
+                long cents = Money.parse(amount.getText(), Ui.unit(from.currency()).digits());
                 Transaction.Type chosen = (Transaction.Type) type.getSelectedToggle().getUserData();
                 boolean transfer = chosen == Transaction.Type.TRANSFER;
+                Account to = transfer ? toAccount.getValue() : null;
+                long toCents = !transfer ? 0 : to != null && !to.currency().equals(from.currency())
+                        ? Money.parse(arrived.getText(), Ui.unit(to.currency()).digits()) : cents;
+                // The rate shown is the rate used; the service works out the
+                // amount in the base currency from it.
+                Transaction.Conversion conversion = from.currency().equals(Ui.baseCurrency().code()) ? null
+                        : new Transaction.Conversion(Money.parseRate(rate.getText()), 0);
                 saved[0] = service.save(new Transaction(existing == null ? 0 : existing.id(), chosen,
-                        account.getValue(), cents, transfer ? toAccount.getValue() : null, transfer ? cents : 0,
+                        from, cents, to, toCents,
                         transfer ? null : category.getValue(), transfer ? "" : merchant.getText(),
                         description.getText(), date.getValue(), note.getText(),
-                        Transaction.parseTags(tags.getText())));
+                        Transaction.parseTags(tags.getText()), conversion));
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);

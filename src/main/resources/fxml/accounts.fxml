@@ -20,7 +20,7 @@
     <VBox styleClass="card, stat-card, stat-accent" spacing="6" HBox.hgrow="ALWAYS">
       <Label text="NET WORTH" styleClass="stat-label"/>
       <Label fx:id="netWorthValue" styleClass="stat-value"/>
-      <Label text="what you have, minus what you owe" styleClass="stat-caption"/>
+      <Label fx:id="netWorthCaption" text="what you have, minus what you owe" styleClass="stat-caption" wrapText="true"/>
     </VBox>
     <VBox styleClass="card, stat-card" spacing="6" HBox.hgrow="ALWAYS">
       <Label text="YOU HAVE" styleClass="stat-label"/>

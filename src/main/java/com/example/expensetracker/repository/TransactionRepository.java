@@ -4,6 +4,7 @@ import com.example.expensetracker.model.Account;
 import com.example.expensetracker.model.Category;
 import com.example.expensetracker.model.CategoryTotal;
 import com.example.expensetracker.model.Transaction;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -21,7 +22,7 @@ public final class TransactionRepository {
 
     private static final String SELECT = """
             SELECT t.id, t.type, t.amount_cents, t.to_amount_cents, t.merchant, t.description,
-                   t.occurred_on, t.note,
+                   t.occurred_on, t.note, t.rate, t.base_amount_cents,
                    a.id AS a_id, a.name AS a_name, a.kind AS a_kind, a.currency AS a_currency,
                    a.opening_cents AS a_opening,
                    b.id AS b_id, b.name AS b_name, b.kind AS b_kind, b.currency AS b_currency,
@@ -77,8 +78,8 @@ public final class TransactionRepository {
             try (PreparedStatement insert = connection.prepareStatement("""
                     INSERT INTO transactions(type, account_id, amount_cents, to_account_id,
                                              to_amount_cents, category_id, merchant, description,
-                                             occurred_on, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+                                             occurred_on, note, rate, base_amount_cents)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
                 bind(insert, transaction);
                 insert.executeUpdate();
                 try (ResultSet keys = insert.getGeneratedKeys()) {
@@ -98,10 +99,10 @@ public final class TransactionRepository {
                     UPDATE transactions
                     SET type = ?, account_id = ?, amount_cents = ?, to_account_id = ?,
                         to_amount_cents = ?, category_id = ?, merchant = ?, description = ?,
-                        occurred_on = ?, note = ?
+                        occurred_on = ?, note = ?, rate = ?, base_amount_cents = ?
                     WHERE id = ?""")) {
                 bind(update, transaction);
-                update.setLong(11, transaction.id());
+                update.setLong(13, transaction.id());
                 update.executeUpdate();
             }
             writeTags(transaction);
@@ -121,11 +122,11 @@ public final class TransactionRepository {
         });
     }
 
-    /** How many expenses there are, and their sum in cents. */
+    /** How many expenses there are, and their sum in the base currency's minor units. */
     public long[] expenseCountAndTotal() throws SQLException {
         try (Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery(
-                        "SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM transactions WHERE type = 'expense'")) {
+                        "SELECT COUNT(*), COALESCE(SUM(base_amount_cents), 0) FROM transactions WHERE type = 'expense'")) {
             rows.next();
             return new long[] {rows.getLong(1), rows.getLong(2)};
         }
@@ -140,11 +141,15 @@ public final class TransactionRepository {
         }
     }
 
-    /** Totals per category of one type, between two dates inclusive, largest first. */
+    /**
+     * Totals per category of one type, between two dates inclusive, largest
+     * first, in the base currency: amounts in different currencies are only
+     * ever added once converted.
+     */
     public List<CategoryTotal> totalsByCategory(Transaction.Type type, LocalDate from, LocalDate to)
             throws SQLException {
         try (PreparedStatement query = connection.prepareStatement("""
-                SELECT c.id, c.name, c.color, c.kind, SUM(t.amount_cents) AS total, COUNT(*) AS n
+                SELECT c.id, c.name, c.color, c.kind, SUM(t.base_amount_cents) AS total, COUNT(*) AS n
                 FROM transactions t JOIN categories c ON c.id = t.category_id
                 WHERE t.type = ? AND t.occurred_on BETWEEN ? AND ?
                 GROUP BY c.id ORDER BY total DESC, c.name""")) {
@@ -214,7 +219,7 @@ public final class TransactionRepository {
         for (Transaction t : transactions) {
             tagged.add(new Transaction(t.id(), t.type(), t.account(), t.amountCents(), t.toAccount(),
                     t.toAmountCents(), t.category(), t.merchant(), t.description(), t.date(), t.note(),
-                    tags.getOrDefault(t.id(), List.of())));
+                    tags.getOrDefault(t.id(), List.of()), t.conversion()));
         }
         return tagged;
     }
@@ -236,6 +241,10 @@ public final class TransactionRepository {
         statement.setString(8, t.description());
         statement.setString(9, t.date().toString());
         statement.setString(10, t.note());
+        Transaction.Conversion conversion = t.conversion() == null
+                ? new Transaction.Conversion(BigDecimal.ONE, t.amountCents()) : t.conversion();
+        statement.setString(11, conversion.rate().stripTrailingZeros().toPlainString());
+        statement.setLong(12, conversion.baseAmountCents());
     }
 
     private static List<Transaction> readAll(ResultSet rows) throws SQLException {
@@ -254,7 +263,9 @@ public final class TransactionRepository {
             transactions.add(new Transaction(rows.getLong("id"), Transaction.Type.fromKey(rows.getString("type")),
                     from, rows.getLong("amount_cents"), to, rows.getLong("to_amount_cents"), category,
                     rows.getString("merchant"), rows.getString("description"),
-                    LocalDate.parse(rows.getString("occurred_on")), rows.getString("note"), List.of()));
+                    LocalDate.parse(rows.getString("occurred_on")), rows.getString("note"), List.of(),
+                    new Transaction.Conversion(new BigDecimal(rows.getString("rate")),
+                            rows.getLong("base_amount_cents"))));
         }
         return transactions;
     }

@@ -23,6 +23,7 @@
       <ToggleButton fx:id="transactionsNav" text="Transactions" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="accountsNav" text="Accounts" styleClass="nav-item" maxWidth="Infinity"/>
       <ToggleButton fx:id="categoriesNav" text="Categories" styleClass="nav-item" maxWidth="Infinity"/>
+      <ToggleButton fx:id="currenciesNav" text="Currencies" styleClass="nav-item" maxWidth="Infinity"/>
       <Label text="PREFERENCES" styleClass="nav-heading, nav-heading-spaced"/>
       <ToggleButton fx:id="settingsNav" text="Settings" styleClass="nav-item" maxWidth="Infinity"/>
       <Region VBox.vgrow="ALWAYS"/>
