@@ -78,9 +78,12 @@ class EcbRatesTest {
             real.replaceFirst("rate='[0-9.]+'", "rate='-1'"),
             real.replaceFirst("rate='[0-9.]+'", "rate='1,5'"),
             real.replaceFirst("time='", "time='2026-13-45' x='"),
-            real.replace("</Cube>\n\t</Cube>", "<Cube time='2026-09-24'/></Cube>\n\t</Cube>"),
+            real.replaceFirst("<Cube currency='USD'", "<Cube time='2026-09-24'/><Cube currency='USD'"),
             real.replaceFirst("currency='USD'", "currency='usd'"),
         }) {
+            // Built by search and replace: one that found nothing to replace
+            // would test the real feed, and pass for the wrong reason.
+            org.junit.jupiter.api.Assertions.assertNotEquals(real, broken, "a case that breaks nothing");
             assertThrows(IllegalArgumentException.class, () -> EcbRates.parse(broken), broken);
         }
     }

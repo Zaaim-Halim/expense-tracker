@@ -43,6 +43,7 @@ class ExchangeRateApiTest {
             real.replaceFirst("\"EUR\":1", "\"EUR\":2"),
             real.replaceFirst("\"time_last_update_unix\":\\d+", "\"time_last_update_unix\":\"soon\""),
         }) {
+            org.junit.jupiter.api.Assertions.assertNotEquals(real, broken, "a case that breaks nothing");
             assertThrows(IllegalArgumentException.class, () -> ExchangeRateApi.parse(broken), broken);
         }
     }
