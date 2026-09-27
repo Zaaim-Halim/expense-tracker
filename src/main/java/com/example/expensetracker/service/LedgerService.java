@@ -3,6 +3,7 @@ package com.example.expensetracker.service;
 import com.example.expensetracker.model.Account;
 import com.example.expensetracker.model.Budget;
 import com.example.expensetracker.model.Recurring;
+import com.example.expensetracker.model.Template;
 import com.example.expensetracker.model.Category;
 import com.example.expensetracker.model.CategoryTotal;
 import com.example.expensetracker.model.CurrencyUnit;
@@ -18,6 +19,7 @@ import com.example.expensetracker.repository.DebtRepository;
 import com.example.expensetracker.repository.GoalRepository;
 import com.example.expensetracker.repository.ReportRepository;
 import com.example.expensetracker.repository.RecurringRepository;
+import com.example.expensetracker.repository.TemplateRepository;
 import com.example.expensetracker.repository.Database;
 import com.example.expensetracker.repository.TransactionRepository;
 import java.math.BigDecimal;
@@ -69,6 +71,7 @@ public final class LedgerService {
     private final GoalRepository goals;
     private final DebtRepository debts;
     private final ReportRepository reports;
+    private final TemplateRepository templates;
 
     public LedgerService(Database database) {
         this.transactions = new TransactionRepository(database);
@@ -80,6 +83,7 @@ public final class LedgerService {
         this.goals = new GoalRepository(database);
         this.debts = new DebtRepository(database);
         this.reports = new ReportRepository(database);
+        this.templates = new TemplateRepository(database);
     }
 
     // --- transactions ---------------------------------------------------------
@@ -341,7 +345,8 @@ public final class LedgerService {
             // them would change every amount's meaning.
             Account stored = accounts.findAll().stream().filter(a -> a.id() == account.id()).findFirst().orElse(null);
             if (stored != null && !stored.currency().equals(code)
-                    && (accounts.usage(account.id()) > 0 || recurring.usingAccount(account.id()) > 0)) {
+                    && (accounts.usage(account.id()) > 0 || recurring.usingAccount(account.id()) > 0
+                            || templates.usingAccount(account.id()) > 0)) {
                 throw new IllegalArgumentException("\"" + stored.name() + "\" has transactions, so it stays in "
                         + stored.currency());
             }
@@ -445,7 +450,8 @@ public final class LedgerService {
             Category stored = categories.findAll().stream().filter(c -> c.id() == category.id())
                     .findFirst().orElse(null);
             if (stored != null && stored.kind() != category.kind() && (categories.usage(category.id()) > 0
-                    || recurring.usingCategory(category.id()) > 0 || budgets.usingCategory(category.id()) > 0)) {
+                    || recurring.usingCategory(category.id()) > 0 || budgets.usingCategory(category.id()) > 0
+                    || templates.usingCategory(category.id()) > 0)) {
                 throw new IllegalArgumentException("\"" + stored.name() + "\" is in use, so it stays a category for "
                         + (stored.kind() == Category.Kind.INCOME ? "income" : "expenses"));
             }
@@ -1615,5 +1621,100 @@ public final class LedgerService {
         found.sort(Comparator.comparing((Holding h) -> h.inBaseCents() == null ? Long.MIN_VALUE : h.inBaseCents())
                 .reversed());
         return found;
+    }
+
+    // --- templates -----------------------------------------------------------
+
+    public static final int MAX_TEMPLATE_NAME = 40;
+
+    public List<Template> allTemplates() throws SQLException {
+        return templates.findAll();
+    }
+
+    /** How many templates use an account, which go with it if it is deleted. */
+    public int templatesUsing(Account account) throws SQLException {
+        return templates.usingAccount(account.id());
+    }
+
+    /** How many templates use a category, which go with it if it is deleted. */
+    public int templatesUsing(Category category) throws SQLException {
+        return templates.usingCategory(category.id());
+    }
+
+    /**
+     * Saves a new template, or changes one (a non-zero id), checked as a
+     * transaction made from it would be, except for its rate: it is
+     * converted on the day it is used. Its name is its description when it
+     * has none of its own.
+     */
+    public Template save(Template template) throws SQLException {
+        String name = template.name() == null || template.name().isBlank() ? template.description()
+                : template.name().strip();
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Describe it");
+        }
+        if (name.length() > MAX_TEMPLATE_NAME) {
+            throw new IllegalArgumentException("Keep the name under " + MAX_TEMPLATE_NAME + " characters");
+        }
+        if (template.amountCents() != null && template.amountCents() <= 0) {
+            throw new IllegalArgumentException("The amount must be more than zero, or left empty to be asked");
+        }
+        if (template.toAmountCents() != null && template.toAmountCents() <= 0) {
+            throw new IllegalArgumentException("What arrives must be more than zero, or left empty to be asked");
+        }
+        // Checked with a stand-in amount when it is asked each time.
+        Template probe = template.amountCents() != null ? template : new Template(template.id(), name,
+                template.type(), template.account(), 1L, template.toAccount(), template.toAmountCents(),
+                template.category(), template.merchant(), template.description(), template.note(), template.tags(),
+                template.favourite(), template.uses(), template.lastUsed());
+        Transaction checked = checkShape(probe.toTransaction(LocalDate.now()));
+        boolean transfer = checked.type() == Transaction.Type.TRANSFER;
+        boolean across = transfer && !checked.toAccount().currency().equals(checked.account().currency());
+        Template valid = new Template(template.id(), name, checked.type(), checked.account(), template.amountCents(),
+                transfer ? checked.toAccount() : null, across ? template.toAmountCents() : null,
+                transfer ? null : checked.category(), checked.merchant(), checked.description(), checked.note(),
+                checked.tags(), template.favourite(), template.uses(), template.lastUsed());
+        if (valid.id() == 0) {
+            return templates.insert(valid);
+        }
+        templates.update(valid);
+        return valid;
+    }
+
+    public void deleteTemplate(Template template) throws SQLException {
+        templates.delete(template.id());
+    }
+
+    /**
+     * Makes a transaction from a template, dated {@code day} and converted at
+     * that day's rate, and counts the use. Only for a template with nothing
+     * to ask: see {@link Template#complete()}.
+     *
+     * @throws IllegalArgumentException when it asks for something, or the
+     *     transaction cannot be saved (no rate for the day, say)
+     */
+    public Transaction use(Template template, LocalDate day) throws SQLException {
+        if (!template.complete()) {
+            throw new IllegalArgumentException("\"" + template.name() + "\" asks for its amount each time");
+        }
+        Transaction saved = save(template.toTransaction(day));
+        templates.used(template.id(), day);
+        return saved;
+    }
+
+    /** Undoes {@link #use}: deletes exactly the transaction it made, and takes back the use. */
+    public void undoUse(Template template, Transaction made) throws SQLException {
+        deleteTransaction(made.id());
+        templates.unused(template.id());
+    }
+
+    /** Counts a use of a template the user filled in and saved themselves. */
+    public void used(Template template, LocalDate day) throws SQLException {
+        templates.used(template.id(), day);
+    }
+
+    /** What has been entered before, most entered first: for suggestions as a description is typed. */
+    public List<TransactionRepository.Entered> entered(int limit) throws SQLException {
+        return transactions.entered(limit);
     }
 }

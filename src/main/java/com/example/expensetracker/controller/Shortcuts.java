@@ -27,6 +27,8 @@ final class Shortcuts {
     static final KeyCombination CURRENCIES = new KeyCodeCombination(KeyCode.DIGIT0, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination SETTINGS = new KeyCodeCombination(KeyCode.COMMA, KeyCombination.SHORTCUT_DOWN);
     static final KeyCombination NEW_TRANSACTION = new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN);
+    static final KeyCombination QUICK_ADD = new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN,
+            KeyCombination.SHIFT_DOWN);
     static final KeyCombination FIND = new KeyCodeCombination(KeyCode.F, KeyCombination.SHORTCUT_DOWN);
 
     /** What each shortcut does, for the list in Settings. */
@@ -39,6 +41,7 @@ final class Shortcuts {
     static List<Entry> all() {
         return List.of(
                 new Entry(NEW_TRANSACTION.getDisplayText(), "New transaction"),
+                new Entry(QUICK_ADD.getDisplayText(), "Quick add: an expense in a few keystrokes"),
                 new Entry(FIND.getDisplayText(), "Search transactions"),
                 new Entry(DASHBOARD.getDisplayText(), "Dashboard"),
                 new Entry(TRANSACTIONS.getDisplayText(), "Transactions"),

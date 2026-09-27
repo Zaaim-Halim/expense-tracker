@@ -122,6 +122,7 @@ public final class MainController {
 
     public void setup(LedgerService ledger) {
         this.service = ledger;
+        Toast.useHost(content);
         Ui.useCurrencies(ledger);
         navigation.selectToggle(dashboardNav);
         // A changed setting shows at once: the theme on the window, and dates
@@ -172,6 +173,8 @@ public final class MainController {
                 transactions.focusSearch();
             }
         });
+        scene.getAccelerators().put(Shortcuts.QUICK_ADD,
+                () -> QuickAddDialog.show(scene.getWindow(), service, this::dataChanged));
         scene.getAccelerators().put(Shortcuts.NEW_TRANSACTION, () -> {
             if (TransactionDialog.show(scene.getWindow(), service, null)) {
                 dataChanged();

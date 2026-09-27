@@ -49,6 +49,59 @@ public final class TransactionRepository {
         }
     }
 
+    /**
+     * What has been entered before: for each description of each type, its
+     * most recent transaction (the latest day, then the latest entered), and
+     * how many times it was entered, the most often entered first.
+     *
+     * @param latest the most recent transaction with that description
+     * @param count  how many have it
+     */
+    public record Entered(Transaction latest, int count) {
+    }
+
+    /** At most {@code limit} descriptions, most entered first. */
+    public List<Entered> entered(int limit) throws SQLException {
+        java.util.Map<Long, Integer> counts = new java.util.LinkedHashMap<>();
+        try (PreparedStatement query = connection.prepareStatement("""
+                SELECT id, n FROM (
+                    SELECT id,
+                           COUNT(*) OVER (PARTITION BY lower(description), type) AS n,
+                           ROW_NUMBER() OVER (PARTITION BY lower(description), type
+                                              ORDER BY occurred_on DESC, id DESC) AS r,
+                           MAX(occurred_on) OVER (PARTITION BY lower(description), type) AS last
+                    FROM transactions)
+                WHERE r = 1
+                ORDER BY n DESC, last DESC, id DESC
+                LIMIT ?""")) {
+            query.setInt(1, limit);
+            try (ResultSet rows = query.executeQuery()) {
+                while (rows.next()) {
+                    counts.put(rows.getLong(1), rows.getInt(2));
+                }
+            }
+        }
+        if (counts.isEmpty()) {
+            return List.of();
+        }
+        String ids = String.join(",", counts.keySet().stream().map(String::valueOf).toList());
+        java.util.Map<Long, Transaction> byId = new java.util.HashMap<>();
+        try (Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery(SELECT + " WHERE t.id IN (" + ids + ")")) {
+            for (Transaction t : withTags(readAll(rows))) {
+                byId.put(t.id(), t);
+            }
+        }
+        List<Entered> found = new ArrayList<>();
+        counts.forEach((id, count) -> {
+            Transaction t = byId.get(id);
+            if (t != null) {
+                found.add(new Entered(t, count));
+            }
+        });
+        return found;
+    }
+
     /** The {@code limit} most recent transactions. */
     public List<Transaction> findRecent(int limit) throws SQLException {
         try (PreparedStatement query = connection.prepareStatement(

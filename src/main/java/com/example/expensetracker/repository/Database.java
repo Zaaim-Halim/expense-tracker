@@ -36,7 +36,7 @@ import java.util.List;
 public final class Database implements AutoCloseable {
 
     /** The tables this build creates and understands. */
-    public static final int SCHEMA = 8;
+    public static final int SCHEMA = 9;
 
     /**
      * The oldest schema whose code can safely use a file of {@link #SCHEMA}.
@@ -69,6 +69,10 @@ public final class Database implements AutoCloseable {
      * own that let an account be deleted under them, and a column with a
      * default on recurring transactions, which schema 7's code leaves alone
      * when it changes a rule. So schema 5's code may still open it.
+     *
+     * <p>Schema 9 adds templates, in a table of their own that goes with an
+     * account or a category deleted under it. Schema 5's code may still open
+     * it.
      */
     public static final int COMPATIBILITY = 5;
 
@@ -304,6 +308,9 @@ public final class Database implements AutoCloseable {
             }
             if (schema < 8) {
                 addGoalsAndDebts();
+            }
+            if (schema < 9) {
+                addTemplates();
             }
             connection.commit();
         } catch (SQLException e) {
@@ -652,6 +659,42 @@ public final class Database implements AutoCloseable {
             // before, which still reads it.
             statement.execute("UPDATE recurring SET regular_income = 1 WHERE type = 'income' AND bill = 1");
             statement.execute("UPDATE meta SET value = '8' WHERE key = 'schema'");
+        }
+    }
+
+    /**
+     * Schema 9: templates, transactions kept to be entered again. Additive:
+     * see {@link #COMPATIBILITY}. A template goes with the account or the
+     * category it uses, so the versions before, which know nothing of
+     * templates, can still delete either.
+     */
+    private void addTemplates() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE templates (
+                        id              INTEGER PRIMARY KEY,
+                        name            TEXT NOT NULL,
+                        type            TEXT NOT NULL CHECK (type IN ('expense', 'income', 'transfer')),
+                        account_id      INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                        amount_cents    INTEGER CHECK (amount_cents IS NULL OR amount_cents > 0),
+                        to_account_id   INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+                        to_amount_cents INTEGER CHECK (to_amount_cents IS NULL OR to_amount_cents > 0),
+                        category_id     INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+                        merchant        TEXT NOT NULL DEFAULT '',
+                        description     TEXT NOT NULL,
+                        note            TEXT NOT NULL DEFAULT '',
+                        tags            TEXT NOT NULL DEFAULT '',
+                        favourite       INTEGER NOT NULL DEFAULT 0,
+                        uses            INTEGER NOT NULL DEFAULT 0 CHECK (uses >= 0),
+                        last_used       TEXT,
+                        CHECK ((type = 'transfer' AND to_account_id IS NOT NULL AND category_id IS NULL
+                                    AND to_account_id <> account_id)
+                            OR (type <> 'transfer' AND to_account_id IS NULL AND category_id IS NOT NULL))
+                    )""");
+            statement.execute("CREATE INDEX templates_by_account ON templates(account_id)");
+            statement.execute("CREATE INDEX templates_by_destination ON templates(to_account_id)");
+            statement.execute("CREATE INDEX templates_by_category ON templates(category_id)");
+            statement.execute("UPDATE meta SET value = '9' WHERE key = 'schema'");
         }
     }
 

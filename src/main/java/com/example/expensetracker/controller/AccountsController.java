@@ -155,8 +155,16 @@ public final class AccountsController implements Page {
     }
 
     private void delete(Account account) {
+        int kept;
+        try {
+            kept = service.templatesUsing(account);
+        } catch (SQLException e) {
+            kept = 0;
+        }
         if (!Ui.confirm(window(), "Delete \"" + account.name() + "\"?",
-                "The account is removed. An account with transactions cannot be deleted.", "Delete")) {
+                "The account is removed. An account with transactions cannot be deleted."
+                        + (kept == 0 ? "" : kept == 1 ? " The template that uses it goes with it."
+                                : " The " + kept + " templates that use it go with it."), "Delete")) {
             return;
         }
         try {

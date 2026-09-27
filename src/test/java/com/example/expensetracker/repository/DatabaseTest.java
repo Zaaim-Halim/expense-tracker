@@ -439,4 +439,25 @@ class DatabaseTest {
             assertEquals(5, count(after, "PRAGMA user_version"), "only additions, so 2.2 to 2.4 may still open it");
         }
     }
+
+    @Test
+    void a_schema_eight_file_gets_templates_and_keeps_everything_else() throws Exception {
+        Path file = dir.resolve("expenses.db");
+        // Written by the real 2.5.1: three coffees and a goal of its own.
+        try (java.io.InputStream in = DatabaseTest.class.getResourceAsStream("/schema-8.db")) {
+            Files.copy(in, file);
+        }
+        try (Database database = Database.open(file)) {
+            assertEquals(Database.SCHEMA, database.schemaVersion());
+            assertEquals(List.of(), new TemplateRepository(database).findAll());
+            assertEquals(3, new TransactionRepository(database).findAll().size());
+            assertEquals(1, new GoalRepository(database).findAll().size());
+            var entered = new TransactionRepository(database).entered(10);
+            assertEquals(1, entered.size());
+            assertEquals(3, entered.get(0).count());
+        }
+        try (Connection after = DriverManager.getConnection("jdbc:sqlite:" + file)) {
+            assertEquals(5, count(after, "PRAGMA user_version"), "only additions, so 2.2 to 2.5 may still open it");
+        }
+    }
 }

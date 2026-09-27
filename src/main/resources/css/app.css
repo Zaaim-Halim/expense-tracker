@@ -1733,3 +1733,92 @@
     -fx-padding: 7 4 7 0;
     -fx-border-color: transparent transparent -track transparent;
 }
+
+/* Templates above a new transaction, and what was entered before under its
+   description. */
+.template-chip,
+.template-chip:hover,
+.template-chip:armed {
+    -fx-background-radius: 99;
+    -fx-border-radius: 99;
+    -fx-padding: 5 12 5 9;
+    -fx-graphic-text-gap: 6;
+    -fx-text-fill: -text;
+}
+
+.template-chip:hover {
+    -fx-border-color: -accent;
+    -fx-background-color: -accent-soft;
+}
+
+.template-chip .icon {
+    -fx-scale-x: 0.62;
+    -fx-scale-y: 0.62;
+    -fx-fill: -accent-text;
+}
+
+.description-suggestions {
+    -fx-background-color: -subtle;
+    -fx-background-radius: 10;
+    -fx-padding: 4;
+}
+
+.description-suggestion {
+    -fx-padding: 6 10 6 8;
+    -fx-background-radius: 8;
+    -fx-cursor: hand;
+}
+
+.description-suggestion:hover {
+    -fx-background-color: -accent-soft;
+}
+
+.favourite-on .icon {
+    -fx-fill: #f59e0b;
+}
+
+.toast {
+    -fx-background-color: -text;
+    -fx-background-radius: 12;
+    -fx-padding: 10 12 10 16;
+    -fx-effect: dropshadow(gaussian, -popup-shadow, 18, 0, 0, 4);
+}
+
+.toast-text {
+    -fx-text-fill: -bg;
+}
+
+.toast-icon {
+    -fx-fill: -positive;
+}
+
+.toast-action,
+.toast-action:hover,
+.toast-action:armed {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: -accent-soft;
+    -fx-font-weight: bold;
+}
+
+.toast-action .icon {
+    -fx-fill: -accent-soft;
+}
+
+.quick-row {
+    -fx-background-color: -surface;
+    -fx-background-radius: 14;
+    -fx-border-color: -border;
+    -fx-border-radius: 14;
+    -fx-padding: 12 18 12 18;
+}
+
+.quick-label {
+    -fx-font-weight: bold;
+    -fx-text-fill: -text-2;
+}
+
+.icon-only {
+    -fx-padding: 9 11 9 11;
+    -fx-graphic-text-gap: 0;
+}

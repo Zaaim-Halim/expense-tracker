@@ -96,6 +96,12 @@ public final class Render {
                 main.select(section);
                 write(scene, directory.resolve(section.name().toLowerCase() + ".png"));
             }
+            // The notice after a one-click add, with its Undo.
+            main.select(MainController.Section.DASHBOARD);
+            Toast.show("Added Coffee, 3.50, to Visa", "Undo", Icons.UNDO, () -> { });
+            write(scene, directory.resolve("toast.png"));
+            Toast.hide();
+
             // The long pages whole: what scrolls, drawn at its full height.
             for (MainController.Section section : new MainController.Section[] {MainController.Section.REPORTS,
                 MainController.Section.GOALS, MainController.Section.DASHBOARD, MainController.Section.CALENDAR}) {
@@ -138,6 +144,11 @@ public final class Render {
             small.setTransform(Transform.scale(2, 2));
             small.setViewport(new javafx.geometry.Rectangle2D(0, 0, 1920, 1280));
             writePng(root.snapshot(small, null), directory.resolve("accounts-smallest.png"));
+            main.select(MainController.Section.TRANSACTIONS);
+            root.resize(960, 640);
+            root.applyCss();
+            root.layout();
+            writePng(root.snapshot(small, null), directory.resolve("transactions-smallest.png"));
             root.resize(scene.getWidth(), scene.getHeight());
             root.layout();
 
@@ -191,6 +202,15 @@ public final class Render {
             dialog(RatesDialog.create(stage, service, null), directory.resolve("dialog-current-rates.png"));
             dialog(RatesDialog.create(stage, service, "USD"), directory.resolve("dialog-rates-in-usd.png"));
             dialog(GoalDialog.create(stage, service, null), directory.resolve("dialog-new-goal.png"));
+            dialog(TemplatesDialog.create(stage, service, () -> { }), directory.resolve("dialog-templates.png"));
+            dialog(TemplateDialog.create(stage, service, service.allTemplates().get(1)),
+                    directory.resolve("dialog-edit-template.png"));
+            typed(TransactionDialog.create(stage, service, null), "What was it? e.g. Groceries", "gro",
+                    directory.resolve("dialog-new-transaction-suggesting.png"));
+            typed(QuickAddDialog.create(stage, service, () -> { }), "What was it? e.g. Coffee", "Coffee",
+                    directory.resolve("dialog-quick-add.png"));
+            typed(QuickAddDialog.create(stage, service, () -> { }), "What was it? e.g. Coffee", "lu",
+                    directory.resolve("dialog-quick-add-suggesting.png"));
             dialog(GoalDialog.create(stage, service, service.allGoals().get(0)), directory.resolve("dialog-edit-goal.png"));
             dialog(AccountDialog.create(stage, service, service.accountNamed("Car loan")),
                     directory.resolve("dialog-edit-loan.png"));
@@ -482,6 +502,18 @@ public final class Render {
         close.run();
     }
 
+    /** A dialog with something typed in one of its fields, the field focused, as a user leaves it. */
+    private static void typed(Dialog<?> dialog, String prompt, String text, Path file) throws IOException {
+        dialog.show();
+        TextField field = (TextField) dialog.getDialogPane().lookupAll(".text-field").stream()
+                .filter(node -> prompt.equals(((TextField) node).getPromptText())).findFirst().orElseThrow();
+        field.requestFocus();
+        field.setText(text);
+        dialog.getDialogPane().getScene().getWindow().sizeToScene();
+        write(dialog.getDialogPane().getScene(), file);
+        dialog.close();
+    }
+
     private static void dialog(Dialog<?> dialog, Path file) throws IOException {
         dialog.show();
         write(dialog.getDialogPane().getScene(), file);
@@ -631,6 +663,21 @@ public final class Render {
                 today.plusMonths(3), "#f97316", today.minusMonths(3)));
         service.save(new com.example.expensetracker.model.Goal(0, "Bike", 80_000, "", null, 80_000, null, "#22c55e",
                 today.minusMonths(2)));
+
+        // Templates: two favourites, one that asks its amount, one not yet used.
+        com.example.expensetracker.model.Template coffee = service.save(new com.example.expensetracker.model.Template(0,
+                "Coffee", Transaction.Type.EXPENSE, card, 350L, null, null, service.categoryNamed("Food"),
+                "Café Luna", "Coffee", "", List.of(), true, 0, null));
+        for (int i = 0; i < 9; i++) {
+            service.use(coffee, today.minusDays(i * 3L));
+        }
+        service.save(new com.example.expensetracker.model.Template(0, "Weekly shop", Transaction.Type.EXPENSE, card,
+                null, null, null, service.categoryNamed("Food"), "Fresh Market", "Groceries", "", List.of(), true, 0,
+                null));
+        service.save(new com.example.expensetracker.model.Template(0, "Lunch", Transaction.Type.EXPENSE, bank, 1_250L,
+                null, null, service.categoryNamed("Food"), "", "Lunch", "", List.of("work"), false, 0, null));
+        service.save(new com.example.expensetracker.model.Template(0, "Put aside", Transaction.Type.TRANSFER, bank,
+                20_000L, savings, null, null, "", "Put aside", "", List.of(), false, 0, null));
 
         // What is known of the card, and a loan being paid back.
         service.saveDebt(new com.example.expensetracker.model.Debt(card.id(), 300_000L,

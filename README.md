@@ -33,6 +33,16 @@ application. Why it exists, what it proves so far and what comes next are in
 - **Transactions:** expenses, income and transfers between accounts, with a
   merchant; add, edit, duplicate and delete; sortable by any column;
   double-click or Enter to edit, Delete to remove.
+- **Templates and quick entry:** a transaction entered again and again
+  (the morning coffee, the weekly shop) kept as a template, from a
+  transaction or on its own; one with an amount is added in one click, with
+  Undo, one without opens filled in for the amount. Favourites are offered
+  above a new transaction and on the dashboard. As a description is typed,
+  what was entered before is suggested, and picking one fills in its
+  category, account, merchant and amount. Quick add (⌘⇧N, Ctrl+Shift+N
+  elsewhere) takes an expense in a few keystrokes: what it was and how much,
+  the rest as last time. A template's day and rate are always those of the
+  day it is used.
 - **Search and filters:** search descriptions, merchants, notes and tags (case
   and accents ignored, so "cafe" finds "Café"); filter by type, account,
   category, tag, a date range and an amount range.
@@ -93,9 +103,10 @@ application. Why it exists, what it proves so far and what comes next are in
   how dates, amounts and the first day of the week are written. Saved as they
   change, in `settings.properties` beside the data, so updates keep them.
 - **Keyboard:** every page and action has a shortcut (⌘ on macOS, Ctrl
-  elsewhere), listed in Settings: N for a new transaction, F to search, 1 to
-  9 and 0 for the pages, comma for Settings; Enter edits and Delete removes
-  the selected row.
+  elsewhere), listed in Settings: N for a new transaction, Shift+N for quick
+  add, F to search, 1 to 9 and 0 for the pages, comma for Settings; Enter
+  edits and Delete removes the selected row, and a right click offers the
+  rest.
 - **Backups:** made automatically once a day (the latest 10 are kept) and
   whenever you ask, in a folder of your choosing; any of them restored in a
   click, with your current data kept as a backup first so a restore can be

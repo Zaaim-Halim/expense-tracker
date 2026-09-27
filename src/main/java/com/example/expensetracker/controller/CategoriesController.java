@@ -71,8 +71,16 @@ public final class CategoriesController implements Page {
     }
 
     private void delete(Category category) {
+        int kept;
+        try {
+            kept = service.templatesUsing(category);
+        } catch (java.sql.SQLException e) {
+            kept = 0;
+        }
         if (!Ui.confirm(window(), "Delete \"" + category.name() + "\"?",
-                "The category is removed. Expenses are never deleted with it.", "Delete")) {
+                "The category is removed. Expenses are never deleted with it."
+                        + (kept == 0 ? "" : kept == 1 ? " The template that uses it goes with it."
+                                : " The " + kept + " templates that use it go with it."), "Delete")) {
             return;
         }
         try {

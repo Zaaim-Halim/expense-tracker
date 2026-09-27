@@ -41,6 +41,9 @@ public final class DashboardController implements Page {
     @FXML private VBox comingCard;
     @FXML private VBox comingRows;
     @FXML private Button recurringButton;
+    @FXML private HBox quickRow;
+    @FXML private javafx.scene.layout.FlowPane quickChips;
+    @FXML private Button templatesButton;
     @FXML private VBox goalCard;
     @FXML private VBox goalRows;
     @FXML private Button goalsButton;
@@ -52,6 +55,7 @@ public final class DashboardController implements Page {
     public void setup(LedgerService ledger, Runnable changed) {
         this.service = ledger;
         this.dataChanged = changed;
+        link(templatesButton, () -> TemplatesDialog.show(templatesButton.getScene().getWindow(), service, dataChanged));
         newExpenseButton.setGraphic(Icons.of(Icons.ADD));
         newExpenseButton.setOnAction(event -> {
             if (TransactionDialog.show(newExpenseButton.getScene().getWindow(), service, null)) {
@@ -158,8 +162,42 @@ public final class DashboardController implements Page {
         return new VBox(6, top, track, status);
     }
 
+    /** How many templates the dashboard offers to add in one click. */
+    private static final int QUICK_SHOWN = 6;
+
+    /**
+     * The favourite templates, one click each; the most used when none is a
+     * favourite yet. Nothing at all until there is a template.
+     */
+    private void refreshQuick() {
+        List<com.example.expensetracker.model.Template> all;
+        try {
+            all = service.allTemplates();
+        } catch (SQLException e) {
+            all = List.of();
+        }
+        List<com.example.expensetracker.model.Template> favourites = all.stream()
+                .filter(com.example.expensetracker.model.Template::favourite).toList();
+        List<com.example.expensetracker.model.Template> shown = (favourites.isEmpty() ? all : favourites).stream()
+                .limit(QUICK_SHOWN).toList();
+        quickChips.getChildren().clear();
+        for (com.example.expensetracker.model.Template template : shown) {
+            Button chip = new Button(template.name() + (template.amountCents() == null ? ""
+                    : " · " + Ui.money(template.amountCents(), template.account().currency())));
+            chip.setGraphic(Icons.of(template.complete() ? Icons.BOLT : Icons.ADD));
+            chip.getStyleClass().add("template-chip");
+            chip.setTooltip(new javafx.scene.control.Tooltip(template.complete() ? "Add it now, dated today"
+                    : "Add it, typing the amount"));
+            chip.setOnAction(event -> Templates.use(chip.getScene().getWindow(), service, template, dataChanged));
+            quickChips.getChildren().add(chip);
+        }
+        quickRow.setVisible(!shown.isEmpty());
+        quickRow.setManaged(!shown.isEmpty());
+    }
+
     @Override
     public void refresh() {
+        refreshQuick();
         refreshPlans();
         YearMonth month = YearMonth.now();
         monthLabel.setText(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault(Locale.Category.DISPLAY))

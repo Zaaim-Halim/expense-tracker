@@ -78,7 +78,7 @@ public record TransactionFilter(String text, Transaction.Type type, long account
     }
 
     /** Lower case, accents removed, spaces trimmed: how text is compared. */
-    static String fold(String value) {
+    public static String fold(String value) {
         if (value == null) {
             return "";
         }

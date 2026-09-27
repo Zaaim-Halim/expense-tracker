@@ -3,7 +3,10 @@ package com.example.expensetracker.controller;
 import com.example.expensetracker.model.Account;
 import com.example.expensetracker.model.Category;
 import com.example.expensetracker.model.CurrencyUnit;
+import com.example.expensetracker.model.Template;
 import com.example.expensetracker.model.Transaction;
+import com.example.expensetracker.repository.TransactionRepository;
+import com.example.expensetracker.service.Suggestions;
 import com.example.expensetracker.service.LedgerService;
 import com.example.expensetracker.service.Money;
 import java.sql.SQLException;
@@ -43,8 +46,32 @@ public final class TransactionDialog {
         return create(owner, service, existing).showAndWait().isPresent();
     }
 
+    /** Shows a new transaction filled in from a template; true when something was saved. */
+    public static boolean showFrom(Window owner, LedgerService service, Template template) {
+        return create(owner, service, null, template, null).showAndWait().isPresent();
+    }
+
+    /** Shows a new transaction filled in with what was typed elsewhere, such as in quick add. */
+    public static boolean showPrefilled(Window owner, LedgerService service, Transaction prefill) {
+        return create(owner, service, null, null, prefill).showAndWait().isPresent();
+    }
+
+    /** How many templates are offered above a new transaction. */
+    private static final int TEMPLATES_SHOWN = 6;
+    /** How many earlier descriptions are offered under the one being typed. */
+    private static final int SUGGESTIONS_SHOWN = 4;
+
     /** The dialog, not yet shown. */
     static Dialog<Transaction> create(Window owner, LedgerService service, Transaction existing) {
+        return create(owner, service, existing, null, null);
+    }
+
+    /**
+     * The dialog, not yet shown: {@code existing} to edit, or a new one,
+     * filled in from {@code template} or {@code prefill} when given.
+     */
+    static Dialog<Transaction> create(Window owner, LedgerService service, Transaction existing, Template template,
+            Transaction prefill) {
         Dialog<Transaction> dialog = new Dialog<>();
         Ui.style(dialog, owner);
         dialog.getDialogPane().getStyleClass().add("form-dialog");
@@ -53,14 +80,22 @@ public final class TransactionDialog {
         List<Account> accounts;
         List<Category> categories;
         List<String> known;
+        List<Template> templates;
+        List<TransactionRepository.Entered> entered;
         try {
             accounts = service.allAccounts();
             categories = service.allCategories();
             known = service.allTags();
+            // Only a new transaction is offered templates and what was
+            // entered before; one being edited is what it is.
+            templates = existing == null ? service.allTemplates() : List.of();
+            entered = existing == null ? service.entered(ENTERED_LOADED) : List.of();
         } catch (SQLException e) {
             accounts = List.of();
             categories = List.of();
             known = List.of();
+            templates = List.of();
+            entered = List.of();
         }
 
         ToggleGroup type = new ToggleGroup();
@@ -378,15 +413,136 @@ public final class TransactionDialog {
                     .ifPresent(category::setValue);
         }
 
+        // Fills the form from a template or from what was entered before:
+        // what it was, where, and for how much, but never its day or its rate,
+        // which are today's. The note only from a template: an old one was
+        // about that day.
+        Template[] fromTemplate = {null};
+        java.util.function.BiConsumer<Transaction, Boolean> fill = (source, withNote) -> {
+            type.getToggles().stream().filter(t -> t.getUserData() == source.type()).findFirst()
+                    .ifPresent(type::selectToggle);
+            select(account, source.account());
+            if (source.toAccount() != null) {
+                select(toAccount, source.toAccount());
+            }
+            if (source.category() != null) {
+                category.getItems().stream().filter(c -> c.id() == source.category().id()).findFirst()
+                        .ifPresent(category::setValue);
+            }
+            description.setText(source.description());
+            merchant.setText(source.merchant());
+            tags.setText(String.join(", ", source.tags()));
+            if (withNote) {
+                note.setText(source.note());
+            }
+            selectCurrency(priceCurrency, source.account().currency());
+            rateTyped[0] = false;
+            chargedTyped[0] = false;
+            amount.setText(source.amountCents() > 0
+                    ? Money.plain(source.amountCents(), Ui.unit(source.account().currency()).digits()) : "");
+            boolean across = source.toAccount() != null
+                    && !source.toAccount().currency().equals(source.account().currency());
+            arrived.setText(across && source.toAmountCents() > 0
+                    ? Money.plain(source.toAmountCents(), Ui.unit(source.toAccount().currency()).digits()) : "");
+            convert.run();
+            if (amount.getText().isBlank()) {
+                Platform.runLater(amount::requestFocus);
+            }
+        };
+
+        FlowPane templateChips = new FlowPane(6, 6);
+        templateChips.getStyleClass().add("template-chips");
+        for (Template kept : templates.stream().limit(TEMPLATES_SHOWN).toList()) {
+            Button chip = new Button(kept.name() + (kept.amountCents() == null ? ""
+                    : " · " + Ui.money(kept.amountCents(), kept.account().currency())));
+            chip.setGraphic(Icons.of(kept.favourite() ? Icons.STAR : Icons.BOOKMARK));
+            chip.getStyleClass().add("template-chip");
+            chip.setFocusTraversable(false);
+            chip.setOnAction(event -> {
+                fromTemplate[0] = kept;
+                fill.accept(kept.toTransaction(date.getValue() == null ? LocalDate.now() : date.getValue()), true);
+            });
+            templateChips.getChildren().add(chip);
+        }
+        boolean anyTemplate = !templateChips.getChildren().isEmpty();
+        templateChips.setVisible(anyTemplate);
+        templateChips.setManaged(anyTemplate);
+
+        // What was entered before, under the description as it is typed:
+        // rows, not a popup, so typing never leaves the field.
+        VBox descriptionSuggestions = new VBox(2);
+        descriptionSuggestions.getStyleClass().add("description-suggestions");
+        boolean[] filling = {false};
+        List<TransactionRepository.Entered> enteredBefore = entered;
+        Runnable suggest = () -> {
+            descriptionSuggestions.getChildren().clear();
+            if (existing == null && !filling[0] && !description.getText().isBlank()) {
+                for (TransactionRepository.Entered entry : Suggestions.matching(enteredBefore, description.getText(),
+                        SUGGESTIONS_SHOWN)) {
+                    Transaction earlier = entry.latest();
+                    if (earlier.description().equals(description.getText())) {
+                        continue;
+                    }
+                    Label title = new Label(earlier.description());
+                    title.getStyleClass().add("row-title");
+                    Label detail = new Label((earlier.category() != null ? earlier.category().name()
+                            : earlier.account().name() + " → " + earlier.toAccount().name()) + " · "
+                            + Ui.money(earlier.amountCents(), earlier.account().currency())
+                            + (entry.count() == 1 ? "" : " · " + entry.count() + " times"));
+                    detail.getStyleClass().add("row-subtitle");
+                    VBox text = new VBox(1, title, detail);
+                    Node icon = Icons.of(Icons.HISTORY, "account-icon");
+                    HBox row = new HBox(10, icon, text);
+                    row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+                    row.getStyleClass().add("description-suggestion");
+                    row.setOnMouseClicked(event -> {
+                        filling[0] = true;
+                        fill.accept(earlier, false);
+                        filling[0] = false;
+                        descriptionSuggestions.getChildren().clear();
+                        refit(dialog);
+                    });
+                    descriptionSuggestions.getChildren().add(row);
+                }
+            }
+            boolean any = !descriptionSuggestions.getChildren().isEmpty();
+            descriptionSuggestions.setVisible(any);
+            descriptionSuggestions.setManaged(any);
+            refit(dialog);
+        };
+        description.textProperty().addListener((observable, before, now) -> suggest.run());
+        description.focusedProperty().addListener((observable, before, now) -> {
+            if (!now) {
+                // Later, so a click on a suggestion lands before the rows go.
+                Platform.runLater(() -> {
+                    descriptionSuggestions.getChildren().clear();
+                    descriptionSuggestions.setVisible(false);
+                    descriptionSuggestions.setManaged(false);
+                    refit(dialog);
+                });
+            }
+        });
+
+        Ui.Option keep = Ui.option("Keep it as a template",
+                "To enter it again in one click, from the templates above and on the dashboard.");
+        keep.row().setVisible(existing == null && template == null);
+        keep.row().setManaged(existing == null && template == null);
+        if (prefill != null) {
+            templateChips.setVisible(false);
+            templateChips.setManaged(false);
+        }
+
         VBox form = new VBox(14,
+                templateChips,
                 types,
-                field("Description", description),
+                field("Description", new VBox(6, description, descriptionSuggestions)),
                 amountAndDate,
                 accountAndCategory,
                 conversionRow,
                 merchantField,
                 field("Tags", new VBox(8, tags, suggestions)),
                 field("Note", note),
+                keep.row(),
                 error);
         form.getStyleClass().add("form");
         form.setPrefWidth(480);
@@ -438,6 +594,18 @@ public final class TransactionDialog {
                         transfer ? null : category.getValue(), transfer ? "" : merchant.getText(),
                         description.getText(), date.getValue(), note.getText(),
                         Transaction.parseTags(tags.getText()), conversion, original));
+                if (fromTemplate[0] != null) {
+                    service.used(fromTemplate[0], saved[0].date());
+                }
+                if (keep.box().isSelected()) {
+                    try {
+                        service.save(Template.of(saved[0], saved[0].description()));
+                    } catch (IllegalArgumentException | SQLException e) {
+                        // The transaction is saved; only the template is not.
+                        Ui.error(dialog.getDialogPane().getScene().getWindow(), "The template was not kept",
+                                e.getMessage());
+                    }
+                }
             } catch (IllegalArgumentException | SQLException e) {
                 error.setText(e.getMessage());
                 error.setVisible(true);
@@ -447,8 +615,26 @@ public final class TransactionDialog {
             }
         });
         dialog.setResultConverter(button -> button == save ? saved[0] : null);
-        Platform.runLater(description::requestFocus);
+        if (template != null) {
+            fromTemplate[0] = template;
+            fill.accept(template.toTransaction(LocalDate.now()), true);
+        } else if (prefill != null) {
+            filling[0] = true;
+            fill.accept(prefill, true);
+            filling[0] = false;
+        }
+        Platform.runLater(template != null && template.amountCents() == null ? amount::requestFocus
+                : description::requestFocus);
         return dialog;
+    }
+
+    /** How many earlier descriptions are read for suggestions, once per dialog. */
+    private static final int ENTERED_LOADED = 500;
+
+    private static void refit(Dialog<?> dialog) {
+        if (dialog.getDialogPane().getScene() != null) {
+            dialog.getDialogPane().getScene().getWindow().sizeToScene();
+        }
     }
 
     /**

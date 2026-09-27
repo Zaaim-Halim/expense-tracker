@@ -43,6 +43,7 @@ public final class TransactionsController implements Page {
     @FXML private Button recurringButton;
     @FXML private Button editButton;
     @FXML private Button deleteButton;
+    @FXML private Button templatesButton;
     @FXML private TableView<Transaction> table;
     @FXML private TableColumn<Transaction, Transaction> dateColumn;
     @FXML private TableColumn<Transaction, String> descriptionColumn;
@@ -65,6 +66,11 @@ public final class TransactionsController implements Page {
     private final Label amountLabel = filterLabel("Amount");
     private final ToggleButton moreFilters = new ToggleButton("Filters");
     private final Button clearFilters = new Button("Clear");
+    {
+        // Named buttons keep their names: the search field gives way instead.
+        moreFilters.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        clearFilters.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+    }
     private final Label filterError = new Label();
     /** Set while the filter controls are being refilled, so that is not a change. */
     private boolean refilling;
@@ -77,7 +83,6 @@ public final class TransactionsController implements Page {
         newButton.setGraphic(Icons.of(Icons.ADD));
         duplicateButton.setGraphic(Icons.of(Icons.DUPLICATE));
         recurringButton.setGraphic(Icons.of(Icons.REPEAT));
-        recurringButton.setTooltip(new Tooltip("Record it again every week, month or year"));
         recurringButton.setOnAction(event -> {
             if (RecurringDialog.show(window(), service, null, selected())) {
                 Recurrences.run(service, () -> { });
@@ -88,8 +93,19 @@ public final class TransactionsController implements Page {
         deleteButton.setGraphic(Icons.of(Icons.DELETE));
         for (Button button : List.of(recurringButton, duplicateButton, editButton, deleteButton)) {
             button.disableProperty().bind(table.getSelectionModel().selectedItemProperty().isNull());
+            // Icons with their names on hover: the header keeps room for the
+            // title and the two actions named in full. A right click on a row
+            // offers them by name too.
+            button.setText("");
+            button.getStyleClass().add("icon-only");
         }
-        duplicateButton.setTooltip(new Tooltip("A copy dated today"));
+        editButton.setTooltip(new Tooltip("Edit the selected transaction"));
+        deleteButton.setTooltip(new Tooltip("Delete the selected transaction"));
+        recurringButton.setTooltip(new Tooltip("Make recurring: record it again every week, month or year"));
+        duplicateButton.setTooltip(new Tooltip("Duplicate: a copy dated today"));
+        templatesButton.setGraphic(Icons.of(Icons.BOOKMARK));
+        templatesButton.setTooltip(new Tooltip("Transactions kept to enter again in one click"));
+        templatesButton.setOnAction(event -> TemplatesDialog.show(window(), service, dataChanged));
         newButton.setOnAction(event -> edit(null));
         duplicateButton.setOnAction(event -> duplicate(selected()));
         editButton.setOnAction(event -> edit(selected()));
@@ -117,6 +133,30 @@ public final class TransactionsController implements Page {
 
         table.setRowFactory(view -> {
             TableRow<Transaction> row = new TableRow<>();
+            // The row's own actions, on a right click: among them keeping it
+            // as a template, which has no button of its own.
+            javafx.scene.control.MenuItem edit = new javafx.scene.control.MenuItem("Edit", Icons.of(Icons.EDIT));
+            edit.setOnAction(event -> edit(row.getItem()));
+            javafx.scene.control.MenuItem copy = new javafx.scene.control.MenuItem("Duplicate",
+                    Icons.of(Icons.DUPLICATE));
+            copy.setOnAction(event -> duplicate(row.getItem()));
+            javafx.scene.control.MenuItem keep = new javafx.scene.control.MenuItem("Keep as a template",
+                    Icons.of(Icons.BOOKMARK));
+            keep.setOnAction(event -> keepAsTemplate(row.getItem()));
+            javafx.scene.control.MenuItem repeat = new javafx.scene.control.MenuItem("Make recurring",
+                    Icons.of(Icons.REPEAT));
+            repeat.setOnAction(event -> {
+                if (RecurringDialog.show(window(), service, null, row.getItem())) {
+                    Recurrences.run(service, () -> { });
+                    dataChanged.run();
+                }
+            });
+            javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem("Delete", Icons.of(Icons.DELETE));
+            remove.setOnAction(event -> delete(row.getItem()));
+            javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu(edit, copy, keep, repeat,
+                    new javafx.scene.control.SeparatorMenuItem(), remove);
+            row.contextMenuProperty().bind(javafx.beans.binding.Bindings.when(row.emptyProperty())
+                    .then((javafx.scene.control.ContextMenu) null).otherwise(menu));
             row.setOnMouseClicked(event -> {
                 if (event.getClickCount() == 2 && !row.isEmpty()) {
                     edit(row.getItem());
@@ -431,6 +471,26 @@ public final class TransactionsController implements Page {
         if (TransactionDialog.show(window(), service, transaction)) {
             dataChanged.run();
         }
+    }
+
+    /** Keeps a transaction as a template, then opens it to be named or changed. */
+    private void keepAsTemplate(Transaction transaction) {
+        if (transaction == null) {
+            return;
+        }
+        com.example.expensetracker.model.Template kept;
+        try {
+            kept = service.save(com.example.expensetracker.model.Template.of(transaction, transaction.description()));
+        } catch (IllegalArgumentException | SQLException e) {
+            Ui.error(window(), "\"" + transaction.description() + "\" was not kept as a template", e.getMessage());
+            return;
+        }
+        dataChanged.run();
+        Toast.show("Kept \"" + kept.name() + "\" as a template", "Edit it", Icons.EDIT, () -> {
+            if (TemplateDialog.show(window(), service, kept)) {
+                dataChanged.run();
+            }
+        });
     }
 
     private void duplicate(Transaction transaction) {
