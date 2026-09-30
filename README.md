@@ -154,8 +154,10 @@ With no command, opens the application.
 ```
 
 The commands never start the graphical toolkit, so they work with no display.
-That is how the validation scripts drive the installed application. `--status`
-prints one `key=value` per line:
+That is how the validation scripts drive the installed application. An
+installed copy runs once per user, so while its window is open a command
+given to it is not run: the window is shown instead. `--status` prints one
+`key=value` per line:
 
 ```text
 version=1.0.0
@@ -187,6 +189,23 @@ version when it starts and every 15 minutes while it runs, downloads it (a
 small delta when it can), verifies it against the key it trusted at install
 time, and switches to it on its next start.
 
+**For everyone on the computer.** The installer offers it, on the page that
+asks where to install, and asks for administrator rights if you choose it;
+from a terminal, run the installer with `--all-users` under `sudo` or an
+elevated prompt. Each user still has their own data. A copy installed for
+everyone does not update itself, since its users cannot write to it: an
+administrator installs the new version over it.
+
+**One copy at a time.** Starting the application while it is open starts
+nothing new: the window already open comes forward.
+
+**Coming from 2.6.0 or earlier.** A copy first installed with the installer
+of 2.6.0 or an earlier version cannot update past 2.6.1, whatever version it
+has updated itself to since: the launcher that starts it came with that
+installer, updates never replace it, and it cannot start a package that asks
+for one running copy. Uninstall it and install the latest release. Your data
+is outside the installation and is kept.
+
 ## Releases and updates
 
 Every release is built by CI, never by hand. Pushing a tag `vX.Y.Z` that
@@ -215,7 +234,7 @@ plugin, built from xPack's source at the same tag. CI runs the same script.
 ```sh
 # Once per machine: xPack, and a signing key for local builds.
 scripts/setup-xpack.sh
-~/.xpack/sdk/0.4.1/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
+~/.xpack/sdk/0.6.0/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
 
 # The signed package in target/xpack/dist.
 mvn package
@@ -246,6 +265,7 @@ installer in a scratch directory with its own `HOME` and key, and checks, one
 line each:
 
 - the plugin builds a signed package and an installer, and the package verifies
+- the package asks xPack for one running copy
 - the installer installs silently, and the launcher is in place
 - the application starts through the launcher, and its arguments reach it
 - it runs on the bundled Java, not the machine's
@@ -279,6 +299,7 @@ src/main/java/com/example/expensetracker/
   Options.java, Cli.java    the command line
   AppPaths.java             where the data lives
   HealthReport.java         tells xPack the version started
+  InstanceRequests.java     hears a second start, so the window comes forward
   ExpenseTrackerApp.java    the window
   model/                    Transaction, Account, Category, Budget, Recurring, Goal, Debt…
   repository/               SQLite: schema, versioned migrations, queries

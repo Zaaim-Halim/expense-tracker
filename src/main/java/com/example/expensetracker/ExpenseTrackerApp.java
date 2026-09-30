@@ -90,6 +90,8 @@ public final class ExpenseTrackerApp extends Application {
         stage.show();
         // The window is up: tell xPack this version works.
         Platform.runLater(HealthReport::started);
+        // Starting the application again shows this window instead.
+        InstanceRequests.listen(() -> Platform.runLater(() -> bringForward(stage)));
         // After the start is reported, never before it: whatever falls due,
         // recording it cannot make a healthy start look like a failed one.
         MainController main = (MainController) scene.getUserData();
@@ -133,6 +135,19 @@ public final class ExpenseTrackerApp extends Application {
                     e.getMessage() + "\n\nNothing was changed; your data is in " + paths.dataDir());
             return null;
         }
+    }
+
+    /** Puts the window in front of the others, out of the dock or taskbar if it was there. */
+    private static void bringForward(Stage stage) {
+        stage.setIconified(false);
+        stage.show();
+        // A window manager may ignore a window that only asks to come
+        // forward. One that must stay on top is raised, so it is asked for
+        // that and released at once.
+        stage.setAlwaysOnTop(true);
+        stage.toFront();
+        stage.requestFocus();
+        stage.setAlwaysOnTop(false);
     }
 
     @Override

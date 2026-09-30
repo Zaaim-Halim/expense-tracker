@@ -210,6 +210,14 @@ jobs:
           Builds are not code-signed yet, so macOS quarantines a browser
           download and Windows SmartScreen flags it.
 
+          The installer can install for everyone on the computer, with
+          administrator rights. Such a copy does not update itself: an
+          administrator installs the new version over it.
+
+          A copy first installed with the installer of 2.6.0 or an earlier
+          version cannot update past 2.6.1: uninstall it and install from
+          here. Your data is kept.
+
           An installed copy updates itself: the \`.xpkg\` packages and
           \`.xpkgd\` deltas here are what it downloads.
           EOF

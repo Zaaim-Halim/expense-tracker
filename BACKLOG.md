@@ -42,6 +42,8 @@ What has been proven, by which check. `validate-install.sh` is
 | Windows: a graphical application with no console window, and a desktop shortcut | ✅ | 2.2.1 installed on the owner's Windows machine from an installer built with xPack 0.5.0: the application opened with no console behind it, and the installer put a shortcut on the desktop |
 | User data survives uninstall | ✅ | validate-install.sh |
 | Installer wizard (window) | ☐ | manual |
+| One running copy | ◐ | 2.7.0 built with xPack 0.6.0 and installed in a scratch directory on macOS arm64: with the window open, a second start and a start with `--status` each returned at once saying the start was passed on, one Java process remained, and the application emptied the inbox. validate-install.sh checks the package asks for it. Not yet watched: the window coming forward, on any platform, and Windows and Linux at all |
+| Installing for everyone on the computer | ◐ | the 2.7.0 installer's `--dry-run --all-users` on macOS arm64 reports `/Library/Application Support/Expense Tracker`. Not yet installed for everyone on any platform, nor chosen in the wizard |
 | Full update | ☐ | not yet: every update so far had a delta. A copy more than three releases behind (deltas are built from the last three) would get the full package; no such copy has been updated yet |
 | Delta update | ✅ | 1.0.0 → 1.0.1 from CI: 157 696 bytes downloaded instead of 51 MB, 127 of 128 files reused, signature verified |
 | Restart onto the new version | ✅ | 1.0.1 started, reported healthy and was committed; 1.0.0 kept for rollback |
@@ -124,6 +126,11 @@ decision for xPack, not something to work around here.
   to a copy of itself and returns at once (on Windows it has to, so its own
   file can be deleted). A script cannot tell when the installation is gone
   without watching for it, as `validate-install.sh` does.
+
+- **A command given while the window is open is not run.** With one running
+  copy, every start through the launcher is passed to the copy already open,
+  so `--status` or `--add` prints nothing and exits 0. xPack exempts only
+  commands a package declares apart from its launch.
 
 ## Notes
 

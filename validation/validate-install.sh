@@ -24,6 +24,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 xpack_release="$(sed -n 's:.*<xpack.release>\(.*\)</xpack.release>.*:\1:p' "$here/pom.xml")"
 XPACK_HOME="${XPACK_HOME:-$HOME/.xpack/sdk/$xpack_release}"
+app_version="$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' "$here/pom.xml" | head -1)"
 MVN="${MVN:-mvn}"
 APP_ID="io.xpack.examples.expensetracker"
 APP_NAME="Expense Tracker"
@@ -71,6 +72,8 @@ check "the package verifies against the key it was signed with" \
 
 check "the package names its icon for this platform's desktop" \
     "'$XPACK_HOME/xpack' inspect --json '$package' 2>/dev/null | grep -q '\"icon\": *\"icon\\.'"
+check "the package asks for one running copy" \
+    "'$XPACK_HOME/xpack' inspect --json '$package' 2>/dev/null | tr -d ' \n' | grep -q '\"instance\":{\"single\":true}'"
 if [ -d "$dist/Install $APP_NAME.app" ]; then
     check "the installer carries the application's icon" "[ -f '$dist/Install $APP_NAME.app/Contents/Resources/AppIcon.icns' ]"
 fi
@@ -90,7 +93,7 @@ check "the launcher is where the installation keeps it" "[ -x '$launcher' ]"
 
 # --- launch ------------------------------------------------------------------
 version_out="$("$launcher" --version 2>/dev/null || true)"
-check "the application starts through the launcher" "[ \"\$version_out\" = '$APP_NAME 1.0.0' ]" \
+check "the application starts through the launcher" "[ \"\$version_out\" = '$APP_NAME $app_version' ]" \
     "got: $version_out"
 
 "$launcher" --data-dir="$data" --add "Coffee" 3.50 Food >/dev/null 2>&1 || true
@@ -107,7 +110,7 @@ check "it runs on the bundled Java, not the machine's" \
 check "xPack tells the application where it is installed" "[ \"\$(field xpack.application.dir)\" = '$install_dir' ]"
 check "the total is exact to the cent" "[ \"\$(field total)\" = 15.90 ]" "total=$(field total)"
 check "the version reported its own start (health report)" \
-    "'$XPACK_HOME/xpack' --root '$root' list '$APP_ID' 2>/dev/null | grep -q '1.0.0 *good'"
+    "'$XPACK_HOME/xpack' --root '$root' list '$APP_ID' 2>/dev/null | grep -q '$app_version *good'"
 
 # --- uninstall ---------------------------------------------------------------
 # The uninstaller hands the work to a copy of itself and exits without
