@@ -234,7 +234,7 @@ plugin, built from xPack's source at the same tag. CI runs the same script.
 ```sh
 # Once per machine: xPack, and a signing key for local builds.
 scripts/setup-xpack.sh
-~/.xpack/sdk/0.6.0/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
+~/.xpack/sdk/0.6.1/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
 
 # The signed package in target/xpack/dist.
 mvn package
