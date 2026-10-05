@@ -35,7 +35,7 @@
          installed by scripts/setup-xpack.sh, here and in CI alike; the Maven
          plugin below comes from Maven Central and is kept at the same
          version. -->
-    <xpack.release>0.8.0</xpack.release>
+    <xpack.release>0.8.1</xpack.release>
     <!-- What the xPack plugin needs, so a plain `mvn package` builds and
          signs. Each can be overridden with -D, as CI and the validation do. -->
     <xpack.home>${user.home}/.xpack/sdk/${xpack.release}</xpack.home>
@@ -109,7 +109,7 @@
       <plugin>
         <groupId>io.github.zaaim-halim</groupId>
         <artifactId>xpack-maven-plugin</artifactId>
-        <version>0.8.0</version>
+        <version>0.8.1</version>
         <configuration>
           <id>io.xpack.examples.expensetracker</id>
           <name>Expense Tracker</name>
