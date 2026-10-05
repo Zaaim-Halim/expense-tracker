@@ -228,13 +228,14 @@ other, and CI stops a release whose packages it does not verify.
 
 Needs a JDK 21 with `jlink`, Maven, and xPack. `scripts/setup-xpack.sh`
 installs the xPack release pinned in `pom.xml` (`xpack.release`): its binaries
-from xPack's GitHub release, checked against their checksums, and its Maven
-plugin, built from xPack's source at the same tag. CI runs the same script.
+from xPack's GitHub release, checked against their checksums. CI runs the same
+script. Maven downloads the plugin, `io.github.zaaim-halim:xpack-maven-plugin`,
+from Maven Central at the same version.
 
 ```sh
 # Once per machine: xPack, and a signing key for local builds.
 scripts/setup-xpack.sh
-~/.xpack/sdk/0.6.1/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
+~/.xpack/sdk/0.8.0/xpack keygen --out ~/.xpack/keys/expense-tracker/signing.json
 
 # The signed package in target/xpack/dist.
 mvn package
@@ -243,7 +244,7 @@ mvn package
 mvn package -Pinstaller
 
 # Build, install into target/xpack/run and start it, in one go.
-mvn package io.xpack:xpack-maven-plugin:0.1.0-SNAPSHOT:run
+mvn package io.github.zaaim-halim:xpack-maven-plugin:0.8.0:run
 ```
 
 A local build is signed with the local key, so a copy installed from it only
